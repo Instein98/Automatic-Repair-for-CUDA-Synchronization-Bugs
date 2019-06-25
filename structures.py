@@ -1,23 +1,9 @@
-"""
-Program ::= Function
-Function ::= "int" <name> "(" ")" "{" Statement "}"
-Statement ::= "return" Expression ";"
-Expression ::= <int>
-"""
 
-from pyparsing import *
-
-LBrace, RBrace, LParen, RParen, semicolon = map(Suppress, "{}();")
-number = Word(nums)
-identifier = Word(alphas+'_', alphanums+'_')
-dataType = Literal("int")
-expression = number
-statement = Literal("return") + expression + semicolon
-function = dataType('returnType') + identifier('fnName') + LParen + RParen + LBrace + statement('statements') + RBrace
+from grammar import *
 
 def formatAST(unformattedAST):
     tempList = list(str(unformattedAST[0]))
-    braceCount = -1;
+    braceCount = -1
     for index, char in enumerate(tempList):
         if char == '\n':
             tempList.insert(index+1, (braceCount * '    ') if braceCount > 0 else '')
@@ -35,6 +21,7 @@ def fail():
 class ASTNode(object):
     def __init__(self, content):
         self.content = content  # origin text of the node
+
     def __str__(self):
         pass
     __repr__ = __str__
@@ -48,7 +35,7 @@ class Program(ASTNode):
         self.content = f.read()
         f.close()
         self.parseFunctions()
-        
+
     def parseFunctions(self):
         parseResult = function.scanString(self.content)
         for x in parseResult:
@@ -79,6 +66,17 @@ class Statement(ASTNode):
         super().__init__(content)
 
 
+class UnaryOp(ASTNode):
+    pass
+
+
+class BinOp(ASTNode):
+    pass
+
+
+def test():
+    return 2 - - 3
+
 # class Expression(ASTNode):
 #     def assignFields(self):
 #         self.num = self.tokens
@@ -98,6 +96,7 @@ class Statement(ASTNode):
 
 
 if __name__ == "__main__":
-    Path = "/home/instein/Instein98/CUDA/CUDA PARSER/test/stage_1/valid/return_2.c"
+    Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_3/valid/add.c"
+    # Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_1/invalid/no_space.c"
     P = Program(Path)
-    print("finish") 
+    print(P.functionList[0].statementList[0].content)
