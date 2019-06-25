@@ -1,5 +1,5 @@
 
-from grammar import *
+from Grammar import *
 
 def formatAST(unformattedAST):
     tempList = list(str(unformattedAST[0]))
@@ -74,9 +74,6 @@ class BinOp(ASTNode):
     pass
 
 
-def test():
-    return 2 - - 3
-
 # class Expression(ASTNode):
 #     def assignFields(self):
 #         self.num = self.tokens
@@ -96,7 +93,9 @@ def test():
 
 
 if __name__ == "__main__":
-    Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_3/valid/add.c"
-    # Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_1/invalid/no_space.c"
+    Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_4/valid/precedence_2.c"
     P = Program(Path)
     print(P.functionList[0].statementList[0].content)
+    # Path = "D:/DATA/Python_ws/CUDA_Parser/test/stage_4/valid/or_false.c"
+    # P = Program(Path)
+    # print(P.functionList[0].statementList[0].content)
