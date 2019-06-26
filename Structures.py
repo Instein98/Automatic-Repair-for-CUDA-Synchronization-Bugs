@@ -1,20 +1,24 @@
 from Grammar import *
 
-def formatAST(unformattedAST):
-    tempList = list(str(unformattedAST[0]))
-    braceCount = -1
-    for index, char in enumerate(tempList):
-        if char == '\n':
-            tempList.insert(index+1, (braceCount * '    ') if braceCount > 0 else '')
-        elif char == '{':
-            braceCount += 1
-        elif char == '}':
-            braceCount -= 1
-    return "".join(tempList)  
+unaryOperator = ['unary -', 'unary ~', 'unary !']
+binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||']
 
 
-def fail():
-    print("!!!!!!!PARSE FAILED!!!!!!!!")
+# def formatAST(unformattedAST):
+#     tempList = list(str(unformattedAST[0]))
+#     braceCount = -1
+#     for index, char in enumerate(tempList):
+#         if char == '\n':
+#             tempList.insert(index+1, (braceCount * '    ') if braceCount > 0 else '')
+#         elif char == '{':
+#             braceCount += 1
+#         elif char == '}':
+#             braceCount -= 1
+#     return "".join(tempList)
+
+
+def fail(str = "!!!!!!!PARSE FAILED!!!!!!!!"):
+    print(str)
 
 
 class ASTNode(object):
@@ -71,6 +75,9 @@ class Statement(ASTNode):
         for x in scanResult:
             if self.content[x[1]:x[2]] == "return ":
                 continue
+            elif self.content[x[1]:x[1]+7] == "return ":
+                self.expressionList.append(Expression(self.content[x[1]+7:x[2]]))
+                continue
             self.expressionList.append(Expression(self.content[x[1]:x[2]]))
         if not self.expressionList:
             fail()
@@ -79,54 +86,89 @@ class Statement(ASTNode):
 class Expression(ASTNode):
     def __init__(self, content):
         super().__init__(content)
-        # self.parseExpression()
+        self.operator = None
+        self.parseExpression()
 
     def parseExpression(self):
-        arithExpParseResult = arithmeticExp.parseString(self.content)
-        print(" ")
+        postfixTokens = parseExp(self.content)
+        print(self.content," -> ",postfixTokens)
+        self.constructNode(postfixTokens)
 
-    def parse_term(_term):
-        pass
+    def constructNode(self, postfixTokens):
+        index = 0
+        while len(postfixTokens) > 1:
+            if postfixTokens[index] in unaryOperator:
+                if index - 1 < 0:
+                    fail("Failed to construct AST for expression!: Unary Operator")
+                Uop = UnaryOp(postfixTokens[index], postfixTokens[index-1])
+                postfixTokens[index-1] = Uop
+                del postfixTokens[index]
+                continue
+            elif postfixTokens[index] in binaryOperator:
+                if index - 2 < 0:
+                    fail("Failed to construct AST for expression!: Binary Operator")
+                Bop = BinOp(postfixTokens[index], postfixTokens[index-2], postfixTokens[index-1])
+                postfixTokens[index-2] = Bop
+                del postfixTokens[index]
+                del postfixTokens[index-1]
+                index -= 1
+                continue
+            else:
+                index += 1
+                if index > len(postfixTokens) - 1:
+                    fail("Failed to construct AST for expression!: Index out of range")
+        self.operator = postfixTokens[0]
+
+
 
 class UnaryOp(ASTNode):
-    pass
+    def __init__(self, op, opr):
+        # content = str(op) + str(opr)
+        # super().__init__(content)
+        self.operator = op
+        self.operand = opr
 
 
 class BinOp(ASTNode):
-    def __init__(self, content, op, left, right):
-        super().__init__(content)
+    def __init__(self, op, left, right):
+        # content = str(left) + str(op) + str(right)
+        # super().__init__(content)
         self.op = op
         self.left = left
         self.right = right
 
 
 if __name__ == "__main__":
-    dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_4/valid/"
+    stage = 4
+    dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
         print(P.functionList[0].statementList[0].content)
 
-    # stage 4
-    test("and_false.c")
-    test("and_true.c")
-    test("eq_false.c")
-    test("eq_true.c")
-    test("ge_false.c")
-    test("ge_true.c")
-    test("gt_false.c")
-    test("gt_true.c")
-    test("le_false.c")
-    test("le_true.c")
-    test("lt_false.c")
-    test("lt_true.c")
-    test("ne_false.c")
+    # stage 3
+    # test("add.c")
+
+    # # stage 4
+    # test("and_false.c")
+    # test("and_true.c")
+    # test("eq_false.c")
+    # test("eq_true.c")
+    # test("ge_false.c")
+    # test("ge_true.c")
+    # test("gt_false.c")
+    # test("gt_true.c")
+    # test("le_false.c")
+    # test("le_true.c")
+    # test("lt_false.c")
+    # test("lt_true.c")
+    # test("ne_false.c")
     test("ne_true.c")
-    test("or_false.c")
-    test("or_true.c")
-    test("precedence.c")
-    test("precedence_2.c")
-    test("precedence_3.c")
-    test("precedence_4.c")
+    # test("or_false.c")
+    # test("or_true.c")
+    # test("precedence.c")
+    # test("precedence_2.c")
+    # test("precedence_3.c")
+    # test("precedence_4.c")
 
 
 

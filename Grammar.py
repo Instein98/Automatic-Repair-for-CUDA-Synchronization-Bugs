@@ -27,11 +27,11 @@ def pushUnary(strg, loc, toks):
         else:
             break
 
-def parseArithExp(exp):
+def parseExp(exp):
     global exprStack
     exprStack[:] = []
     try:
-        arithmeticExp.parseString(exp, parseAll=True)
+        expression.parseString(exp, parseAll=True)
     except ParseException as pe:
         print(exp, "Parsing Failed:", str(pe))
     except Exception as e:
@@ -50,16 +50,16 @@ dataType = Literal("int")
 
 # Arithmetic expressions
 expression = Forward()
-atom = ((0,None)*unaryOp + (Group(LParen + expression + RParen)
-    | (number | identifier + LParen + expression + RParen | identifier ).setParseAction( pushFirst ))).setParseAction(pushUnary)
+atom = ((0,None)*unaryOp + ((number | identifier + LParen + expression + RParen | identifier).setParseAction(pushFirst)
+    | Group(LParen + expression + RParen))).setParseAction(pushUnary)
 factor = atom
 term = factor + ZeroOrMore(((MUL | DIV) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
 
-_comparisonExp = arithmeticExp + ZeroOrMore((LE | GE | LT | GT) + arithmeticExp)
-comparisonExp = _comparisonExp + ZeroOrMore((EQ | NE) + _comparisonExp)
-_expression = comparisonExp + ZeroOrMore(AND + comparisonExp)
-expression << _expression + ZeroOrMore(OR + _expression)  # include the arithExp and logicExp
+_comparisonExp = arithmeticExp + ZeroOrMore(((LE | GE | LT | GT) + arithmeticExp).setParseAction(pushFirst))
+comparisonExp = _comparisonExp + ZeroOrMore(((EQ | NE) + _comparisonExp).setParseAction(pushFirst))
+_expression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pushFirst))
+expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFirst))  # include the arithExp and logicExp
 
 
 statement = Literal("return") + space + expression + semicolon
