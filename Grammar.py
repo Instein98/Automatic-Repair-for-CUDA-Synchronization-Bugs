@@ -39,9 +39,10 @@ def parseExp(exp):
     else:
         return exprStack
 
-LBrace, RBrace, LParen, RParen, semicolon = map(Suppress, "{}();")
+LBrace, RBrace, LParen, RParen, comma= map(Suppress, "{}(),")
+semicolon = Literal(";")
 ADD, SUB, MUL, DIV = map(Literal, "+-*/")
-AND, OR, EQ, NE, LT, LE, GT, GE = map(Literal, ["&&", "||", "==", "!=", "<", "<=", ">", ">="])
+AND, OR, EQ, NE, LT, LE, GT, GE, ASSIGN = map(Literal, ["&&", "||", "==", "!=", "<", "<=", ">", ">=", "="])
 unaryOp = oneOf("! - ~")  # must have space separator
 number = Regex(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
 identifier = Word(alphas+'_', alphanums+'_')
@@ -59,8 +60,12 @@ arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst)
 _comparisonExp = arithmeticExp + ZeroOrMore(((LE | GE | LT | GT) + arithmeticExp).setParseAction(pushFirst))
 comparisonExp = _comparisonExp + ZeroOrMore(((EQ | NE) + _comparisonExp).setParseAction(pushFirst))
 _expression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pushFirst))
-expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFirst))  # include the arithExp and logicExp
+expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFirst))
 
 
-statement = Literal("return") + space + expression + semicolon
-function = dataType('returnType') + identifier('fnName') + LParen + RParen + LBrace + statement('statements') + RBrace
+
+statement = (Literal("return") + space + expression + semicolon
+            | dataType + space + identifier + Optional(ASSIGN + expression) + semicolon  # Declaration [Initialization]
+            | identifier + ASSIGN + expression + semicolon)  # Assignment
+function = dataType('returnType') + identifier('fnName') + LParen + \
+           RParen + LBrace + ZeroOrMore(statement) + RBrace

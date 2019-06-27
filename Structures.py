@@ -17,7 +17,7 @@ binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '|
 #     return "".join(tempList)
 
 
-def fail(str = "!!!!!!!PARSE FAILED!!!!!!!!"):
+def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
 
 
@@ -68,7 +68,7 @@ class Statement(ASTNode):
     def __init__(self, content):
         super().__init__(content)
         self.expressionList = []
-        self.parseStatement()
+        # self.parseStatement()
 
     def parseStatement(self):
         scanResult = expression.scanString(self.content)
@@ -83,6 +83,13 @@ class Statement(ASTNode):
             fail()
 
 
+class Assignment(Statement):
+    pass
+
+
+# class
+
+
 class Expression(ASTNode):
     def __init__(self, content):
         super().__init__(content)
@@ -92,9 +99,9 @@ class Expression(ASTNode):
     def parseExpression(self):
         postfixTokens = parseExp(self.content)
         print(self.content," -> ",postfixTokens)
-        self.constructNode(postfixTokens)
+        self.constructExpNode(postfixTokens)
 
-    def constructNode(self, postfixTokens):
+    def constructExpNode(self, postfixTokens):
         index = 0
         while len(postfixTokens) > 1:
             if postfixTokens[index] in unaryOperator:
@@ -139,7 +146,7 @@ class BinOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 4
+    stage = 5
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
@@ -148,7 +155,7 @@ if __name__ == "__main__":
     # stage 3
     # test("add.c")
 
-    # # stage 4
+    # stage 4
     # test("and_false.c")
     # test("and_true.c")
     # test("eq_false.c")
@@ -162,13 +169,16 @@ if __name__ == "__main__":
     # test("lt_false.c")
     # test("lt_true.c")
     # test("ne_false.c")
-    test("ne_true.c")
+    # test("ne_true.c")
     # test("or_false.c")
     # test("or_true.c")
     # test("precedence.c")
     # test("precedence_2.c")
     # test("precedence_3.c")
     # test("precedence_4.c")
+
+    #stage 5
+    test("assign.c")
 
 
 
