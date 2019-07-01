@@ -1,21 +1,11 @@
 from Grammar import *
+from abc import ABC, abstractmethod
 
+
+localVar = []
+globalVar = []
 unaryOperator = ['unary -', 'unary ~', 'unary !']
 binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||']
-
-
-# def formatAST(unformattedAST):
-#     tempList = list(str(unformattedAST[0]))
-#     braceCount = -1
-#     for index, char in enumerate(tempList):
-#         if char == '\n':
-#             tempList.insert(index+1, (braceCount * '    ') if braceCount > 0 else '')
-#         elif char == '{':
-#             braceCount += 1
-#         elif char == '}':
-#             braceCount -= 1
-#     return "".join(tempList)
-
 
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
@@ -58,36 +48,54 @@ class FunctionDeclare(ASTNode):
         self.fnName = parseResult['fnName']
         self.statementList = []
         scanResult = statement.scanString(self.content)
-        for x in scanResult:
-            self.statementList.append(Statement(self.content[x[1]:x[2]]))
+        for x in scanResult:  # the content of each statement
+            state = self.parseStatement(self.content[x[1]:x[2]])
+            if state != None:
+                self.statementList.append(state)
         if not self.statementList:
             fail()
 
+    def parseStatement(self, content):
+        parseResult = statement.parseString(content)
+        parseResultDict = parseResult.asDict()
+        if 'Return' in parseResultDict:
+            return Return(content, parseResult)
+        if 'Declaration' in parseResultDict:
+            return Declaration(content, parseResult)
+        if 'Assignment' in parseResultDict:
+            return Assignment(content, parseResult)
+        return None
 
-class Statement(ASTNode):
-    def __init__(self, content):
+
+class Statement(ASTNode, ABC):
+    def __init__(self, content, parseResult):
         super().__init__(content)
-        self.expressionList = []
-        # self.parseStatement()
+        self.parseResult = parseResult
+        self.parseResultDict = parseResult.asDict()
+        self.parseStatement()
 
+    @abstractmethod
     def parseStatement(self):
-        scanResult = expression.scanString(self.content)
-        for x in scanResult:
-            if self.content[x[1]:x[2]] == "return ":
-                continue
-            elif self.content[x[1]:x[1]+7] == "return ":
-                self.expressionList.append(Expression(self.content[x[1]+7:x[2]]))
-                continue
-            self.expressionList.append(Expression(self.content[x[1]:x[2]]))
-        if not self.expressionList:
-            fail()
+        pass
 
 
 class Assignment(Statement):
-    pass
+    def parseStatement(self):
+        self.leftSide = self.parseResultDict['left']
+        self.rightSide = Expression(expToString(self.parseResultDict['right']))
 
 
-# class
+class Return(Statement):
+    def parseStatement(self):
+        self.returnExp = Expression(expToString(self.parseResultDict['retExp']))
+
+
+class Declaration(Statement):
+    def parseStatement(self):
+        self.dataType = self.parseResultDict['dataType']
+        self.varName = self.parseResultDict['varName']
+        if 'initialValue' in self.parseResultDict:
+            self.initExp = Expression(expToString(self.parseResultDict['initialValue']))
 
 
 class Expression(ASTNode):
@@ -98,7 +106,7 @@ class Expression(ASTNode):
 
     def parseExpression(self):
         postfixTokens = parseExp(self.content)
-        print(self.content," -> ",postfixTokens)
+        # print(self.content," -> ",postfixTokens)
         self.constructExpNode(postfixTokens)
 
     def constructExpNode(self, postfixTokens):
@@ -130,16 +138,12 @@ class Expression(ASTNode):
 
 class UnaryOp(ASTNode):
     def __init__(self, op, opr):
-        # content = str(op) + str(opr)
-        # super().__init__(content)
         self.operator = op
         self.operand = opr
 
 
 class BinOp(ASTNode):
     def __init__(self, op, left, right):
-        # content = str(left) + str(op) + str(right)
-        # super().__init__(content)
         self.op = op
         self.left = left
         self.right = right
@@ -150,7 +154,7 @@ if __name__ == "__main__":
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
-        print(P.functionList[0].statementList[0].content)
+        print('Succeed')
 
     # stage 3
     # test("add.c")

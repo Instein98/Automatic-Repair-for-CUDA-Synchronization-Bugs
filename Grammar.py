@@ -28,6 +28,7 @@ def pushUnary(strg, loc, toks):
             break
 
 def parseExp(exp):
+    """Input a expression string, output the postfix token list"""
     global exprStack
     exprStack[:] = []
     try:
@@ -38,6 +39,12 @@ def parseExp(exp):
         print(exp, "Failed:", str(e))
     else:
         return exprStack
+
+def expToString(expList): # The expression list in parse result of statement
+    result = ''.join(str(e) for e in expList)
+    result = result.replace('\'','').replace(',',' ').replace('[','(').replace(']',')')
+    return result
+
 
 LBrace, RBrace, LParen, RParen, comma= map(Suppress, "{}(),")
 semicolon = Literal(";")
@@ -64,8 +71,9 @@ expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFir
 
 
 
-statement = (Literal("return") + space + expression + semicolon
-            | dataType + space + identifier + Optional(ASSIGN + expression) + semicolon  # Declaration [Initialization]
-            | identifier + ASSIGN + expression + semicolon)  # Assignment
+statement = ((Literal("return") + space + expression('retExp') + semicolon)('Return')
+            | (dataType('dataType') + space + identifier('varName') +
+               Optional(ASSIGN + expression('initialValue')) + semicolon)('Declaration')  # Declaration [Initialization]
+            | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment'))  # Assignment
 function = dataType('returnType') + identifier('fnName') + LParen + \
            RParen + LBrace + ZeroOrMore(statement) + RBrace
