@@ -70,10 +70,15 @@ _expression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pu
 expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFirst))
 
 
-
-statement = ((Literal("return") + space + expression('retExp') + semicolon)('Return')
+statement = Forward()  # return, declare, assign, if,
+statementBlock = (statement | LBrace + OneOrMore(statement) + RBrace)
+ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
+elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
+statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
             | (dataType('dataType') + space + identifier('varName') +
                Optional(ASSIGN + expression('initialValue')) + semicolon)('Declaration')  # Declaration [Initialization]
-            | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment'))  # Assignment
+            | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment')  # Assignment
+            | (ifPart + elsePart)('If')  # If statement
+            )
 function = dataType('returnType') + identifier('fnName') + LParen + \
            RParen + LBrace + ZeroOrMore(statement) + RBrace

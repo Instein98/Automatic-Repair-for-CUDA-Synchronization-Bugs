@@ -10,6 +10,19 @@ binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '|
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
 
+def parseStatement(content):
+    parseResult = statement.parseString(content)
+    parseResultDict = parseResult.asDict()
+    if 'If' in parseResultDict:
+        return If(content, parseResult)
+    if 'Return' in parseResultDict:
+        return Return(content, parseResult)
+    if 'Declaration' in parseResultDict:
+        return Declaration(content, parseResult)
+    if 'Assignment' in parseResultDict:
+        return Assignment(content, parseResult)
+    return None
+
 
 class ASTNode(object):
     def __init__(self, content):
@@ -49,22 +62,13 @@ class FunctionDeclare(ASTNode):
         self.statementList = []
         scanResult = statement.scanString(self.content)
         for x in scanResult:  # the content of each statement
-            state = self.parseStatement(self.content[x[1]:x[2]])
+            state = parseStatement(self.content[x[1]:x[2]])
             if state != None:
                 self.statementList.append(state)
         if not self.statementList:
             fail()
 
-    def parseStatement(self, content):
-        parseResult = statement.parseString(content)
-        parseResultDict = parseResult.asDict()
-        if 'Return' in parseResultDict:
-            return Return(content, parseResult)
-        if 'Declaration' in parseResultDict:
-            return Declaration(content, parseResult)
-        if 'Assignment' in parseResultDict:
-            return Assignment(content, parseResult)
-        return None
+
 
 
 class Statement(ASTNode, ABC):
@@ -72,30 +76,51 @@ class Statement(ASTNode, ABC):
         super().__init__(content)
         self.parseResult = parseResult
         self.parseResultDict = parseResult.asDict()
-        self.parseStatement()
+        self.parse()
 
     @abstractmethod
-    def parseStatement(self):
+    def parse(self):
         pass
 
 
 class Assignment(Statement):
-    def parseStatement(self):
+    def parse(self):
         self.leftSide = self.parseResultDict['left']
         self.rightSide = Expression(expToString(self.parseResultDict['right']))
 
 
 class Return(Statement):
-    def parseStatement(self):
+    def parse(self):
         self.returnExp = Expression(expToString(self.parseResultDict['retExp']))
 
 
 class Declaration(Statement):
-    def parseStatement(self):
+    def parse(self):
         self.dataType = self.parseResultDict['dataType']
         self.varName = self.parseResultDict['varName']
         if 'initialValue' in self.parseResultDict:
             self.initExp = Expression(expToString(self.parseResultDict['initialValue']))
+
+class If(Statement):
+    def parse(self):
+        self.ifStatementList = []
+        self.elseStatementList = []
+
+        ifBound = list(ifPart.scanString(self.content))[0]
+        ifContent = self.content[ifBound[1]:ifBound[2]]
+        self.condExp = Expression(ifContent[ifContent.find('(')+1:ifContent.find(')')])
+        ifExclude = list((Literal("if") + LParen + expression('condExp') + RParen).scanString(ifContent))[0]
+        ifContent = ifContent[ifExclude[2]+1:]
+
+        elseContent = self.content[ifBound[2]+1:]
+        for x in statement.scanString(ifContent):
+            state = parseStatement(ifContent[x[1]:x[2]])
+            if state != None:
+                self.ifStatementList.append(state)
+        for x in statement.scanString(elseContent):
+            state = parseStatement(elseContent[x[1]:x[2]])
+            if state != None:
+                self.elseStatementList.append(state)
 
 
 class Expression(ASTNode):
@@ -150,7 +175,7 @@ class BinOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 5
+    stage = 6
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
@@ -181,8 +206,17 @@ if __name__ == "__main__":
     # test("precedence_3.c")
     # test("precedence_4.c")
 
-    #stage 5
-    test("assign.c")
+    # #stage 5
+    # test("assign.c")
+
+    #stage 6
+    # test("statement/else.c")
+    # test("statement/if_nested.c")
+    # test("statement/if_nested_3.c")
+    # test("statement/if_nested_5.c")
+    # test("statement/if_taken.c")
+    test("statement/multiple_if.c")
+
 
 
 
