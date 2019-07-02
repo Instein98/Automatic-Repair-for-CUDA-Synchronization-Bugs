@@ -64,12 +64,17 @@ factor = atom
 term = factor + ZeroOrMore(((MUL | DIV) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
 
+# Logical expression
 _comparisonExp = arithmeticExp + ZeroOrMore(((LE | GE | LT | GT) + arithmeticExp).setParseAction(pushFirst))
 comparisonExp = _comparisonExp + ZeroOrMore(((EQ | NE) + _comparisonExp).setParseAction(pushFirst))
-_expression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pushFirst))
-expression << _expression + ZeroOrMore((OR + _expression).setParseAction(pushFirst))
+ANDexpression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pushFirst))
+ORexpression = ANDexpression + ZeroOrMore((OR + ANDexpression).setParseAction(pushFirst))
+
+# Conditional expression
+expression << ORexpression + Optional((Literal("?") + ORexpression + Literal(":") + ORexpression).setParseAction(pushFirst))
 
 
+# Statements
 statement = Forward()  # return, declare, assign, if,
 statementBlock = (statement | LBrace + OneOrMore(statement) + RBrace)
 ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
@@ -80,5 +85,7 @@ statement << ((Literal("return") + space + expression('retExp') + semicolon)('Re
             | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment')  # Assignment
             | (ifPart + elsePart)('If')  # If statement
             )
+
+# Function
 function = dataType('returnType') + identifier('fnName') + LParen + \
            RParen + LBrace + ZeroOrMore(statement) + RBrace

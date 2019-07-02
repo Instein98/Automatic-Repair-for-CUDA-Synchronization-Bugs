@@ -6,6 +6,7 @@ localVar = []
 globalVar = []
 unaryOperator = ['unary -', 'unary ~', 'unary !']
 binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||']
+ternaryOperator = ['?']
 
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
@@ -131,12 +132,13 @@ class Expression(ASTNode):
 
     def parseExpression(self):
         postfixTokens = parseExp(self.content)
-        # print(self.content," -> ",postfixTokens)
+        print(self.content," -> ",postfixTokens)
         self.constructExpNode(postfixTokens)
 
     def constructExpNode(self, postfixTokens):
         index = 0
         while len(postfixTokens) > 1:
+            # Meet unary operator, pop
             if postfixTokens[index] in unaryOperator:
                 if index - 1 < 0:
                     fail("Failed to construct AST for expression!: Unary Operator")
@@ -144,6 +146,8 @@ class Expression(ASTNode):
                 postfixTokens[index-1] = Uop
                 del postfixTokens[index]
                 continue
+
+            # Meet binary operator, pop
             elif postfixTokens[index] in binaryOperator:
                 if index - 2 < 0:
                     fail("Failed to construct AST for expression!: Binary Operator")
@@ -153,6 +157,20 @@ class Expression(ASTNode):
                 del postfixTokens[index-1]
                 index -= 1
                 continue
+
+            # Meet ternary operator, pop
+            elif postfixTokens[index] in ternaryOperator:
+                if index - 3 < 0:
+                    fail("Failed to construct AST for expression!: Binary Operator")
+                Top = TernaryOp(postfixTokens[index], postfixTokens[index-3], postfixTokens[index-2], postfixTokens[index-1])
+                postfixTokens[index - 3] = Top
+                del postfixTokens[index]
+                del postfixTokens[index - 1]
+                del postfixTokens[index - 2]
+                index -= 2
+                continue
+
+            # Meet identifiers, just push
             else:
                 index += 1
                 if index > len(postfixTokens) - 1:
@@ -172,6 +190,15 @@ class BinOp(ASTNode):
         self.op = op
         self.left = left
         self.right = right
+
+
+class TernaryOp(ASTNode):
+    """conditional expression: a ? b : c"""
+    def __init__(self, op, cond, yes, no):
+        self.op = op
+        self.cond = cond
+        self.yes = yes
+        self.no = no
 
 
 if __name__ == "__main__":
@@ -215,7 +242,10 @@ if __name__ == "__main__":
     # test("statement/if_nested_3.c")
     # test("statement/if_nested_5.c")
     # test("statement/if_taken.c")
-    test("statement/multiple_if.c")
+    # test("statement/multiple_if.c")
+    # test("expression/assign_ternary.c")
+    # test("expression/multiple_ternary.c")
+
 
 
 
