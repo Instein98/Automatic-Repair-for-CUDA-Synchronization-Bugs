@@ -4,8 +4,9 @@ from abc import ABC, abstractmethod
 
 localVar = []
 globalVar = []
-unaryOperator = ['unary -', 'unary ~', 'unary !']
-binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||']
+unaryOperator = ['preUnary --', 'preUnary ++','preUnary ~', 'preUnary !', 'preUnary -', 'postUnary --', 'postUnary ++']
+binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||', '%', '<<', '>>',
+                  '/=', '*=', '%=', '+=', '-=', '<<=', '>>=', '&=', '^=', '|=']
 ternaryOperator = ['?']
 
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
@@ -22,6 +23,8 @@ def parseStatement(content):
         return Declaration(content, parseResult)
     if 'Assignment' in parseResultDict:
         return Assignment(content, parseResult)
+    if 'Exp' in parseResultDict:
+        return Expression(content.replace(';', ''))
     return None
 
 
@@ -202,14 +205,14 @@ class TernaryOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 6
+    stage = 3
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
         print('Succeed')
 
     # stage 3
-    # test("add.c")
+    test("add.c")
 
     # stage 4
     # test("and_false.c")

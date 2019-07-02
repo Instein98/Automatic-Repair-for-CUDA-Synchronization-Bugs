@@ -17,15 +17,24 @@ def pushFirst(strg, loc, toks):
     exprStack.append(toks[0])
 
 def pushUnary(strg, loc, toks):
-    for t in toks:
-        if t == '-':
-            exprStack.append('unary -')
-        elif t == '!':
-            exprStack.append('unary !')
-        elif t == '~':
-            exprStack.append('unary ~')
-        else:
-            break
+    t = toks[0]
+    if t == '--':
+        exprStack.append('preUnary --')
+    elif t == '++':
+        exprStack.append('preUnary ++')
+    elif t == '-':
+        exprStack.append('preUnary -')
+    elif t == '!':
+        exprStack.append('preUnary !')
+    elif t == '~':
+        exprStack.append('preUnary ~')
+
+    t = toks[-1]
+    if t == '--':
+        exprStack.append('postUnary --')
+    elif t == '++':
+        exprStack.append('postUnary ++')
+
 
 def parseExp(exp):
     """Input a expression string, output the postfix token list"""
@@ -50,7 +59,13 @@ LBrace, RBrace, LParen, RParen, comma= map(Suppress, "{}(),")
 semicolon = Literal(";")
 ADD, SUB, MUL, DIV = map(Literal, "+-*/")
 AND, OR, EQ, NE, LT, LE, GT, GE, ASSIGN = map(Literal, ["&&", "||", "==", "!=", "<", "<=", ">", ">=", "="])
-unaryOp = oneOf("! - ~")  # must have space separator
+
+# Newly added
+BinEQ = oneOf("/= *= %= += -= <<= >>= &= ^= |=")
+MOD, LS, RS  = map(Literal, ["%", "<<", ">>"])
+preUnaryOp = oneOf("! - ~ ++ --")  # must have space separator
+postUnaryOp = oneOf("++ --")
+
 number = Regex(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
 identifier = Word(alphas+'_', alphanums+'_')
 space = White(min=1)
@@ -58,21 +73,22 @@ dataType = Literal("int")
 
 # Arithmetic expressions
 expression = Forward()
-atom = ((0,None)*unaryOp + ((number | identifier + LParen + expression + RParen | identifier).setParseAction(pushFirst)
-    | Group(LParen + expression + RParen))).setParseAction(pushUnary)
+atom = ((0,None) * preUnaryOp + ((number | identifier + LParen + expression + RParen | identifier).setParseAction(pushFirst)
+    | Group(LParen + expression + RParen)) + (0,None) * postUnaryOp).setParseAction(pushUnary)
 factor = atom
-term = factor + ZeroOrMore(((MUL | DIV) + factor).setParseAction(pushFirst))
+term = factor + ZeroOrMore(((MUL | DIV | MOD) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
+shiftExp = arithmeticExp + ZeroOrMore(((LS | RS) + arithmeticExp).setParseAction(pushFirst))
 
 # Logical expression
-_comparisonExp = arithmeticExp + ZeroOrMore(((LE | GE | LT | GT) + arithmeticExp).setParseAction(pushFirst))
+_comparisonExp = shiftExp + ZeroOrMore(((LE | GE | LT | GT) + shiftExp).setParseAction(pushFirst))
 comparisonExp = _comparisonExp + ZeroOrMore(((EQ | NE) + _comparisonExp).setParseAction(pushFirst))
 ANDexpression = comparisonExp + ZeroOrMore((AND + comparisonExp).setParseAction(pushFirst))
 ORexpression = ANDexpression + ZeroOrMore((OR + ANDexpression).setParseAction(pushFirst))
 
 # Conditional expression
-expression << ORexpression + Optional((Literal("?") + ORexpression + Literal(":") + ORexpression).setParseAction(pushFirst))
-
+conditionalExp = ORexpression + Optional((Literal("?") + ORexpression + Literal(":") + ORexpression).setParseAction(pushFirst))
+expression << conditionalExp + ZeroOrMore((BinEQ + conditionalExp).setParseAction(pushFirst))
 
 # Statements
 statement = Forward()  # return, declare, assign, if,
@@ -84,6 +100,7 @@ statement << ((Literal("return") + space + expression('retExp') + semicolon)('Re
                Optional(ASSIGN + expression('initialValue')) + semicolon)('Declaration')  # Declaration [Initialization]
             | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment')  # Assignment
             | (ifPart + elsePart)('If')  # If statement
+            | (expression + semicolon)('Exp')
             )
 
 # Function
