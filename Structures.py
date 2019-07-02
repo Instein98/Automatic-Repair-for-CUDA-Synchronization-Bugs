@@ -13,18 +13,33 @@ def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
 
 def parseStatement(content):
+    if content == ';':
+        return None
     parseResult = statement.parseString(content)
     parseResultDict = parseResult.asDict()
     if 'If' in parseResultDict:
-        return If(content, parseResult)
+        if parseResult.asList()[0] == 'if':
+            return If(content, parseResult)
+    if 'For' in parseResultDict:
+        if parseResult.asList()[0] == 'for':
+            return For(content, parseResult)
+    if 'While' in parseResultDict:
+        if parseResult.asList()[0] == 'while':
+            return While(content, parseResult)
+    if 'DoWhile' in parseResultDict:
+        if parseResult.asList()[0] == 'do':
+            return DoWhile(content, parseResult)
     if 'Return' in parseResultDict:
         return Return(content, parseResult)
     if 'Declaration' in parseResultDict:
         return Declaration(content, parseResult)
     if 'Assignment' in parseResultDict:
         return Assignment(content, parseResult)
+    if 'Single' in parseResultDict:
+        return Single(content, parseResult)
     if 'Exp' in parseResultDict:
         return Expression(content.replace(';', ''))
+
     return None
 
 
@@ -73,8 +88,6 @@ class FunctionDeclare(ASTNode):
             fail()
 
 
-
-
 class Statement(ASTNode, ABC):
     def __init__(self, content, parseResult):
         super().__init__(content)
@@ -105,6 +118,7 @@ class Declaration(Statement):
         if 'initialValue' in self.parseResultDict:
             self.initExp = Expression(expToString(self.parseResultDict['initialValue']))
 
+
 class If(Statement):
     def parse(self):
         self.ifStatementList = []
@@ -112,11 +126,11 @@ class If(Statement):
 
         ifBound = list(ifPart.scanString(self.content))[0]
         ifContent = self.content[ifBound[1]:ifBound[2]]
-        self.condExp = Expression(ifContent[ifContent.find('(')+1:ifContent.find(')')])
+        self.condition = Expression(ifContent[ifContent.find('(')+1:ifContent.find(')')])
         ifExclude = list((Literal("if") + LParen + expression('condExp') + RParen).scanString(ifContent))[0]
         ifContent = ifContent[ifExclude[2]+1:]
-
         elseContent = self.content[ifBound[2]+1:]
+
         for x in statement.scanString(ifContent):
             state = parseStatement(ifContent[x[1]:x[2]])
             if state != None:
@@ -125,6 +139,68 @@ class If(Statement):
             state = parseStatement(elseContent[x[1]:x[2]])
             if state != None:
                 self.elseStatementList.append(state)
+
+
+class For(Statement):
+    def parse(self):
+        self.statementList = []
+        leftParenPos = self.content.find('(')
+        rightParenPos = self.content.find(')')
+        firstSemiPos = self.content.find(';')
+        secondSemiPos = self.content.find(';', firstSemiPos + 1)
+        if 'init' in self.parseResultDict:
+            self.initialization = parseStatement(self.content[leftParenPos+1:firstSemiPos]+';')
+        else:
+            self.initialization = None
+        if 'cond' in self.parseResultDict:
+            self.loopCondition = parseStatement(self.content[firstSemiPos+1:secondSemiPos]+';')
+        else:
+            self.loopCondition = None
+        if 'post' in self.parseResultDict:
+            self.postStatement = parseStatement(self.content[secondSemiPos+1:rightParenPos]+';')
+        else:
+            self.postStatement = None
+        forExclude = (Literal("for") + LParen + Optional((declaration | assignment)) + semicolon +
+              Optional(expression) + semicolon + Optional((assignment | expression)) + RParen)
+        forExclude = list(forExclude.scanString(self.content))[0]
+        stateContent = self.content[forExclude[2]+1:]
+
+        for x in statement.scanString(stateContent):
+            state = parseStatement(stateContent[x[1]:x[2]])
+            if state != None:
+                self.statementList.append(state)
+
+
+class While(Statement):
+    def parse(self):
+        self.statementList = []
+        whileExclude = list((Literal("while") + LParen + expression + RParen).scanString(self.content))[0]
+        whileContent = self.content[:whileExclude[2]+1]
+        self.loopCondition = Expression(whileContent[whileContent.find('(')+1 : whileContent.find(')')]+';')
+        stateContent = self.content[whileExclude[2]+1:]
+        for x in statement.scanString(stateContent):
+            state = parseStatement(stateContent[x[1]:x[2]])
+            if state != None:
+                self.statementList.append(state)
+
+
+class DoWhile(Statement):
+    def parse(self):
+        self.statementList = []
+        whileExclude = list((Literal("while") + LParen + expression + RParen).scanString(self.content))[0]
+        whileContent = self.content[whileExclude[1]:]  # the while part
+        self.loopCondition = parseStatement(whileContent[whileContent.find('(')+1:whileContent.find(')')]+';')
+        stateContent = self.content[:whileExclude[1]]
+        for x in statement.scanString(stateContent):
+            state = parseStatement(stateContent[x[1]:x[2]])
+            if state != None:
+                self.statementList.append(state)
+
+
+class Single(Statement):
+    """break/continue etc."""
+    def parse(self):
+        pass
 
 
 class Expression(ASTNode):
@@ -205,14 +281,14 @@ class TernaryOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 3
+    stage = 8
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
         print('Succeed')
 
     # stage 3
-    test("add.c")
+    # test("add.c")
 
     # stage 4
     # test("and_false.c")
@@ -249,6 +325,12 @@ if __name__ == "__main__":
     # test("expression/assign_ternary.c")
     # test("expression/multiple_ternary.c")
 
+    # stage 8
+    # test("break.c")
+    # test("continue.c")
+    # test("continue_empty_post.c")
+    # test("do_while.c")
+    test("empty_expression.c")
 
 
 

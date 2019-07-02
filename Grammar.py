@@ -73,8 +73,8 @@ dataType = Literal("int")
 
 # Arithmetic expressions
 expression = Forward()
-atom = ((0,None) * preUnaryOp + ((number | identifier + LParen + expression + RParen | identifier).setParseAction(pushFirst)
-    | Group(LParen + expression + RParen)) + (0,None) * postUnaryOp).setParseAction(pushUnary)
+atom = ((0,None) * preUnaryOp + ((Literal("false") | Literal("true") | number | identifier + LParen + expression + RParen
+    | identifier).setParseAction(pushFirst) | Group(LParen + expression + RParen)) + (0,None) * postUnaryOp).setParseAction(pushUnary)
 factor = atom
 term = factor + ZeroOrMore(((MUL | DIV | MOD) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
@@ -92,15 +92,24 @@ expression << conditionalExp + ZeroOrMore((BinEQ + conditionalExp).setParseActio
 
 # Statements
 statement = Forward()  # return, declare, assign, if,
-statementBlock = (statement | LBrace + OneOrMore(statement) + RBrace)
+statementBlock = (statement | LBrace + ZeroOrMore(statement) + RBrace)
 ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
 elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
+declaration = dataType('dataType') + space + identifier('varName') + Optional(ASSIGN + expression('initialValue'))
+assignment = identifier('left') + ASSIGN + expression('right')
 statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
-            | (dataType('dataType') + space + identifier('varName') +
-               Optional(ASSIGN + expression('initialValue')) + semicolon)('Declaration')  # Declaration [Initialization]
-            | (identifier('left') + ASSIGN + expression('right') + semicolon)('Assignment')  # Assignment
+            | (declaration + semicolon)('Declaration')  # Declaration [Initialization]
+            | (assignment + semicolon)('Assignment')  # Assignment
             | (ifPart + elsePart)('If')  # If statement
-            | (expression + semicolon)('Exp')
+            | (Literal("for") + LParen + Optional((declaration | assignment)('init')) +
+              semicolon + Optional(expression('cond')) + semicolon +
+              Optional((assignment | expression)('post')) +
+              RParen + statementBlock)('For')  # For statement
+            | (Literal("while") + LParen + expression('cond') + RParen + statementBlock)('While')
+            | (Literal("do") + LBrace + ZeroOrMore(statement) + RBrace + Literal("while") +
+               LParen + expression('cond') + RParen + semicolon)('DoWhile')
+            | (oneOf("break continue __syncthreads()") + semicolon)('Single')
+            | (Optional(expression) + semicolon)('Exp')
             )
 
 # Function
