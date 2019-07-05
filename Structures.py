@@ -62,7 +62,7 @@ class Program(ASTNode):
         self.parseFunctions()
 
     def parseFunctions(self):
-        parseResult = function.scanString(self.content)
+        parseResult = funcDeclare.scanString(self.content)
         for x in parseResult:
             self.functionList.append(FunctionDeclare(self.content[x[1]:x[2]]))
         if not self.functionList:
@@ -72,10 +72,12 @@ class Program(ASTNode):
 class FunctionDeclare(ASTNode):
     def __init__(self, content):
         super().__init__(content)
+        self.argList = []
         self.parseFunction()
+        self.getArgs()
 
     def parseFunction(self):
-        parseResult = function.parseString(self.content)
+        parseResult = funcDeclare.parseString(self.content)
         self.returnType = parseResult['returnType']
         self.fnName = parseResult['fnName']
         self.statementList = []
@@ -86,6 +88,15 @@ class FunctionDeclare(ASTNode):
                 self.statementList.append(state)
         if not self.statementList:
             fail()
+
+    def getArgs(self):
+        argInfo = self.content[self.content.find('(')+1:self.content.find(')')]
+        if not argInfo.strip():
+            return
+        argInfo = argInfo.split(',')
+        for arg in argInfo:
+            argInfo = arg.split()
+            self.argList.append((argInfo[0], argInfo[1]))
 
 
 class Statement(ASTNode, ABC):
@@ -103,12 +114,12 @@ class Statement(ASTNode, ABC):
 class Assignment(Statement):
     def parse(self):
         self.leftSide = self.parseResultDict['left']
-        self.rightSide = Expression(expToString(self.parseResultDict['right']))
+        self.rightSide = Expression(self.content[self.content.find('=')+1:].replace(';',''))
 
 
 class Return(Statement):
     def parse(self):
-        self.returnExp = Expression(expToString(self.parseResultDict['retExp']))
+        self.returnExp = Expression(self.content[self.content.find('return')+6:].replace(';',''))
 
 
 class Declaration(Statement):
@@ -116,7 +127,7 @@ class Declaration(Statement):
         self.dataType = self.parseResultDict['dataType']
         self.varName = self.parseResultDict['varName']
         if 'initialValue' in self.parseResultDict:
-            self.initExp = Expression(expToString(self.parseResultDict['initialValue']))
+            self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';',''))
 
 
 class If(Statement):
@@ -176,7 +187,7 @@ class While(Statement):
         self.statementList = []
         whileExclude = list((Literal("while") + LParen + expression + RParen).scanString(self.content))[0]
         whileContent = self.content[:whileExclude[2]+1]
-        self.loopCondition = Expression(whileContent[whileContent.find('(')+1 : whileContent.find(')')]+';')
+        self.loopCondition = Expression(whileContent[whileContent.find('(')+1 : whileContent.find(')')])
         stateContent = self.content[whileExclude[2]+1:]
         for x in statement.scanString(stateContent):
             state = parseStatement(stateContent[x[1]:x[2]])
@@ -203,10 +214,19 @@ class Single(Statement):
         pass
 
 
+class FunctionCall(ASTNode):
+    def __init__(self, funcName, arguList):
+        super().__init__(funcName)
+        self.funcName = funcName
+        self.arguList = arguList
+        # content = funcName + str(arguList).replace('[', '(').replace(']', ')')
+        # super().__init__('content')
+
+
 class Expression(ASTNode):
     def __init__(self, content):
         super().__init__(content)
-        self.operator = None
+        self.childNode = None
         self.parseExpression()
 
     def parseExpression(self):
@@ -249,12 +269,34 @@ class Expression(ASTNode):
                 index -= 2
                 continue
 
+            # Meet function call
+            elif isinstance(postfixTokens[index], dict):
+                funcInfo = postfixTokens[index]
+                funcName = funcInfo['funcName']
+                arguNum = funcInfo['arguNum']
+                if index - arguNum < 0:
+                    fail("Failed to construct AST for expression!: Function Call")
+                Top = FunctionCall(funcName, postfixTokens[index - arguNum:index])
+                postfixTokens[index-arguNum] = Top
+                for i in range(0, arguNum):
+                    del postfixTokens[index-i]
+                index -= (arguNum - 1)
+                continue
+
+
             # Meet identifiers, just push
             else:
                 index += 1
                 if index > len(postfixTokens) - 1:
                     fail("Failed to construct AST for expression!: Index out of range")
-        self.operator = postfixTokens[0]
+
+        if isinstance(postfixTokens[0], dict):
+            funcInfo = postfixTokens[index]
+            funcName = funcInfo['funcName']
+            arguList = []
+            postfixTokens[0] = FunctionCall(funcName, arguList)
+
+        self.childNode = postfixTokens[0]
 
 
 
@@ -281,7 +323,7 @@ class TernaryOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 8
+    stage = 9
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
@@ -330,8 +372,26 @@ if __name__ == "__main__":
     # test("continue.c")
     # test("continue_empty_post.c")
     # test("do_while.c")
-    test("empty_expression.c")
+    # test("empty_expression.c")
+    # test("for.c")
+    # test("for_decl.c")
+    # test("for_empty.c")
+    # test("for_nested_scope.c")
+    # test("for_variable_shadow.c")
+    # test("nested_break.c")
+    # test("nested_while.c")
+    # test("return_in_while.c")
 
-
-
-
+    # stage 9
+    # test('expression_args.c')
+    # test('fib.c')
+    # test('forward_decl.c')
+    # test('forward_decl_args.c')
+    # test('forward_decl_multi_arg.c')
+    # test('fun_in_expr.c')
+    # test('hello_world.c')
+    # test('multi_arg.c')
+    # test('mutual_recursion.c')
+    # test('no_arg.c')
+    # test('precedence.c')
+    test('variable_as_arg.c')

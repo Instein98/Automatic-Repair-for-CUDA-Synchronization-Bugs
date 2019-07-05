@@ -35,6 +35,19 @@ def pushUnary(strg, loc, toks):
     elif t == '++':
         exprStack.append('postUnary ++')
 
+def pushFunc(strg, loc, toks):
+    funcInfo = toks[0].asList()
+    arguNum = 0
+    for x in funcInfo:
+        if x == ',':
+            arguNum += 1
+    if arguNum == 0:
+        if len(funcInfo) > 1:
+            arguNum += 1
+    else:
+        arguNum += 1
+    dict = {'funcName': funcInfo[0], 'arguNum': arguNum}
+    exprStack.append(dict)
 
 def parseExp(exp):
     """Input a expression string, output the postfix token list"""
@@ -73,8 +86,10 @@ dataType = Literal("int")
 
 # Arithmetic expressions
 expression = Forward()
-atom = ((0,None) * preUnaryOp + ((Literal("false") | Literal("true") | number | identifier + LParen + expression + RParen
-    | identifier).setParseAction(pushFirst) | Group(LParen + expression + RParen)) + (0,None) * postUnaryOp).setParseAction(pushUnary)
+funcCall = Forward()
+atom = ((0,None) * preUnaryOp + (Group(funcCall).setParseAction(pushFunc) | (Literal("false") | Literal("true") |
+        number | identifier).setParseAction(pushFirst) | Group(LParen + expression + RParen)) +
+        (0,None) * postUnaryOp).setParseAction(pushUnary)
 factor = atom
 term = factor + ZeroOrMore(((MUL | DIV | MOD) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
@@ -113,5 +128,8 @@ statement << ((Literal("return") + space + expression('retExp') + semicolon)('Re
             )
 
 # Function
-function = dataType('returnType') + identifier('fnName') + LParen + \
-           RParen + LBrace + ZeroOrMore(statement) + RBrace
+argList = expression + ZeroOrMore(Literal(',') + expression)  # exp, exp, exp ...
+initArgList = delimitedList(dataType + identifier)
+funcDeclare = dataType('returnType') + identifier('fnName') + LParen + Optional(initArgList)('initArgs') + \
+              RParen + LBrace + ZeroOrMore(statement) + RBrace
+funcCall << identifier('fnName') + LParen + Optional(argList)('arguList') + RParen
