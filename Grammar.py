@@ -14,6 +14,7 @@ from pyparsing import *
 exprStack = []
 
 def pushFirst(strg, loc, toks):
+    # print(toks)
     exprStack.append(toks[0])
 
 def pushUnary(strg, loc, toks):
@@ -28,6 +29,10 @@ def pushUnary(strg, loc, toks):
         exprStack.append('preUnary !')
     elif t == '~':
         exprStack.append('preUnary ~')
+    elif t == '&':
+        exprStack.append('preUnary &')
+    elif t == '*':
+        exprStack.append('preUnary *')
 
     t = toks[-1]
     if t == '--':
@@ -48,6 +53,11 @@ def pushFunc(strg, loc, toks):
         arguNum += 1
     dict = {'funcName': funcInfo[0], 'arguNum': arguNum}
     exprStack.append(dict)
+
+# def pushIdent(strg, loc, toks):
+#     # exprStack.append(toks)
+#     print(toks)
+#     print('')
 
 def parseExp(exp):
     """Input a expression string, output the postfix token list"""
@@ -76,21 +86,22 @@ AND, OR, EQ, NE, LT, LE, GT, GE, ASSIGN = map(Literal, ["&&", "||", "==", "!=", 
 # Newly added
 BinEQ = oneOf("/= *= %= += -= <<= >>= &= ^= |=")
 MOD, LS, RS  = map(Literal, ["%", "<<", ">>"])
-preUnaryOp = oneOf("! - ~ ++ --")  # must have space separator
+preUnaryOp = oneOf("! - ~ ++ -- * &")  # must have space separator
 postUnaryOp = oneOf("++ --")
 
 number = Regex(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
 identifier = Word(alphas+'_', alphanums+'_')
 space = White(min=1)
-dataType = Literal("int")
+dataType = (Word(alphas+'_', alphanums+'_') + Literal('*') | Word(alphas+'_', alphanums+'_'))
 
 # Arithmetic expressions
 expression = Forward()
 funcCall = Forward()
 atom = ((0,None) * preUnaryOp + (Group(funcCall).setParseAction(pushFunc) | (Literal("false") | Literal("true") |
-        number | identifier).setParseAction(pushFirst) | Group(LParen + expression + RParen)) +
+        number | identifier).setParseAction(pushFirst)| Group(LParen + expression + RParen)) +
         (0,None) * postUnaryOp).setParseAction(pushUnary)
-factor = atom
+_atom = atom + ZeroOrMore((Literal('[') + Optional(expression) + Literal(']')).setParseAction(pushFirst))
+factor = _atom + ZeroOrMore(((Literal('.') | Literal('->')) + _atom).setParseAction(pushFirst))
 term = factor + ZeroOrMore(((MUL | DIV | MOD) + factor).setParseAction(pushFirst))
 arithmeticExp = term + ZeroOrMore(((ADD | SUB) + term).setParseAction(pushFirst))
 shiftExp = arithmeticExp + ZeroOrMore(((LS | RS) + arithmeticExp).setParseAction(pushFirst))
@@ -111,7 +122,7 @@ statementBlock = (statement | LBrace + ZeroOrMore(statement) + RBrace)
 ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
 elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
 declaration = dataType('dataType') + space + identifier('varName') + Optional(ASSIGN + expression('initialValue'))
-assignment = identifier('left') + ASSIGN + expression('right')
+assignment = expression('left') + ASSIGN + expression('right')
 statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
             | (declaration + semicolon)('Declaration')  # Declaration [Initialization]
             | (assignment + semicolon)('Assignment')  # Assignment
@@ -129,7 +140,7 @@ statement << ((Literal("return") + space + expression('retExp') + semicolon)('Re
 
 # Function
 argList = expression + ZeroOrMore(Literal(',') + expression)  # exp, exp, exp ...
-initArgList = delimitedList(dataType + identifier)
+initArgList = delimitedList(Optional(Literal('const')) + dataType + identifier)
 funcDeclare = dataType('returnType') + identifier('fnName') + LParen + Optional(initArgList)('initArgs') + \
               RParen + LBrace + ZeroOrMore(statement) + RBrace
 funcCall << identifier('fnName') + LParen + Optional(argList)('arguList') + RParen

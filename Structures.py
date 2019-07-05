@@ -4,13 +4,15 @@ from abc import ABC, abstractmethod
 
 localVar = []
 globalVar = []
-unaryOperator = ['preUnary --', 'preUnary ++','preUnary ~', 'preUnary !', 'preUnary -', 'postUnary --', 'postUnary ++']
+unaryOperator = ['preUnary --', 'preUnary ++','preUnary ~', 'preUnary !', 'preUnary -', 'preUnary &',
+                 'preUnary *', 'postUnary --', 'postUnary ++']
 binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||', '%', '<<', '>>',
-                  '/=', '*=', '%=', '+=', '-=', '<<=', '>>=', '&=', '^=', '|=']
+                  '/=', '*=', '%=', '+=', '-=', '<<=', '>>=', '&=', '^=', '|=', '.', '->']
 ternaryOperator = ['?']
 
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
+    exit(0)
 
 def parseStatement(content):
     if content == ';':
@@ -95,8 +97,8 @@ class FunctionDeclare(ASTNode):
             return
         argInfo = argInfo.split(',')
         for arg in argInfo:
-            argInfo = arg.split()
-            self.argList.append((argInfo[0], argInfo[1]))
+            argInfo = arg.rsplit(' ',1)
+            self.argList.append((argInfo[0].strip(), argInfo[1].strip()))
 
 
 class Statement(ASTNode, ABC):
@@ -113,7 +115,7 @@ class Statement(ASTNode, ABC):
 
 class Assignment(Statement):
     def parse(self):
-        self.leftSide = self.parseResultDict['left']
+        self.leftSide = Expression(self.content[:self.content.find('=')])
         self.rightSide = Expression(self.content[self.content.find('=')+1:].replace(';',''))
 
 
@@ -214,15 +216,6 @@ class Single(Statement):
         pass
 
 
-class FunctionCall(ASTNode):
-    def __init__(self, funcName, arguList):
-        super().__init__(funcName)
-        self.funcName = funcName
-        self.arguList = arguList
-        # content = funcName + str(arguList).replace('[', '(').replace(']', ')')
-        # super().__init__('content')
-
-
 class Expression(ASTNode):
     def __init__(self, content):
         super().__init__(content)
@@ -231,7 +224,7 @@ class Expression(ASTNode):
 
     def parseExpression(self):
         postfixTokens = parseExp(self.content)
-        print(self.content," -> ",postfixTokens)
+        # print(self.content," -> ",postfixTokens)
         self.constructExpNode(postfixTokens)
 
     def constructExpNode(self, postfixTokens):
@@ -276,13 +269,22 @@ class Expression(ASTNode):
                 arguNum = funcInfo['arguNum']
                 if index - arguNum < 0:
                     fail("Failed to construct AST for expression!: Function Call")
-                Top = FunctionCall(funcName, postfixTokens[index - arguNum:index])
-                postfixTokens[index-arguNum] = Top
+                FunCall = FunctionCall(funcName, postfixTokens[index - arguNum:index])
+                postfixTokens[index-arguNum] = FunCall
                 for i in range(0, arguNum):
                     del postfixTokens[index-i]
                 index -= (arguNum - 1)
                 continue
 
+            elif postfixTokens[index] == '[':
+                if index - 2 < 0:
+                    fail("Failed to construct AST for expression!: Array")
+                Arr = Array(postfixTokens[index - 2], postfixTokens[index - 1])
+                postfixTokens[index - 2] = Arr
+                del postfixTokens[index]
+                del postfixTokens[index - 1]
+                index -= 1
+                continue
 
             # Meet identifiers, just push
             else:
@@ -299,15 +301,33 @@ class Expression(ASTNode):
         self.childNode = postfixTokens[0]
 
 
+class Array(ASTNode):
+    def __init__(self, arr, index):
+        super().__init__('Array')
+        self.arr = arr
+        self.index = index
+
+
+
+class FunctionCall(ASTNode):
+    def __init__(self, funcName, arguList):
+        super().__init__(funcName)
+        self.funcName = funcName
+        self.arguList = arguList
+        # content = funcName + str(arguList).replace('[', '(').replace(']', ')')
+        # super().__init__('content')
+
 
 class UnaryOp(ASTNode):
     def __init__(self, op, opr):
+        super().__init__(op)
         self.operator = op
         self.operand = opr
 
 
 class BinOp(ASTNode):
     def __init__(self, op, left, right):
+        super().__init__(op)
         self.op = op
         self.left = left
         self.right = right
@@ -316,6 +336,7 @@ class BinOp(ASTNode):
 class TernaryOp(ASTNode):
     """conditional expression: a ? b : c"""
     def __init__(self, op, cond, yes, no):
+        super().__init__(op)
         self.op = op
         self.cond = cond
         self.yes = yes
@@ -323,7 +344,7 @@ class TernaryOp(ASTNode):
 
 
 if __name__ == "__main__":
-    stage = 9
+    stage = 3
     dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
     def test(path):
         P = Program(dir + path)
@@ -394,4 +415,7 @@ if __name__ == "__main__":
     # test('mutual_recursion.c')
     # test('no_arg.c')
     # test('precedence.c')
-    test('variable_as_arg.c')
+    # test('variable_as_arg.c')
+
+    P = Program('D:/DATA/Python_ws/CUDA_Parser/test.c')
+    print('SUCCEED!')
