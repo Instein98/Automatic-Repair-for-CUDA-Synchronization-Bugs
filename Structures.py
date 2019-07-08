@@ -2,8 +2,6 @@ from Grammar import *
 from abc import ABC, abstractmethod
 
 
-localVar = []
-globalVar = []
 unaryOperator = ['preUnary --', 'preUnary ++','preUnary ~', 'preUnary !', 'preUnary -', 'preUnary &',
                  'preUnary *', 'postUnary --', 'postUnary ++']
 binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||', '%', '<<', '>>',
@@ -84,6 +82,7 @@ class FunctionDeclare(ASTNode):
         self.fnName = parseResult['fnName']
         self.statementList = []
         scanResult = statement.scanString(self.content)
+        self.content = self.content.expandtabs()  # To fix the wrong start & end location
         for x in scanResult:  # the content of each statement
             state = parseStatement(self.content[x[1]:x[2]])
             if state != None:
@@ -127,6 +126,7 @@ class Return(Statement):
 class Declaration(Statement):
     def parse(self):
         self.dataType = self.parseResultDict['dataType']
+        self.dataType = self.content[:self.content.find(self.dataType) + len(self.dataType)]
         self.varName = self.parseResultDict['varName']
         if 'initialValue' in self.parseResultDict:
             self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';',''))
@@ -143,6 +143,7 @@ class If(Statement):
         ifExclude = list((Literal("if") + LParen + expression('condExp') + RParen).scanString(ifContent))[0]
         ifContent = ifContent[ifExclude[2]+1:]
         elseContent = self.content[ifBound[2]+1:]
+        elseContent = elseContent[elseContent.find("else") + 4:]
 
         for x in statement.scanString(ifContent):
             state = parseStatement(ifContent[x[1]:x[2]])
@@ -223,7 +224,7 @@ class Expression(ASTNode):
         self.parseExpression()
 
     def parseExpression(self):
-        postfixTokens = parseExp(self.content)
+        postfixTokens = parseExp(self.content).copy()
         # print(self.content," -> ",postfixTokens)
         self.constructExpNode(postfixTokens)
 
@@ -269,6 +270,9 @@ class Expression(ASTNode):
                 arguNum = funcInfo['arguNum']
                 if index - arguNum < 0:
                     fail("Failed to construct AST for expression!: Function Call")
+                parseResult = funcCall.parseString(self.content)
+                if 'T' in parseResult.asDict():
+                    funcName = self.content[:self.content.find('>')+1]
                 FunCall = FunctionCall(funcName, postfixTokens[index - arguNum:index])
                 postfixTokens[index-arguNum] = FunCall
                 for i in range(0, arguNum):

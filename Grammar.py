@@ -117,11 +117,13 @@ conditionalExp = ORexpression + Optional((Literal("?") + ORexpression + Literal(
 expression << conditionalExp + ZeroOrMore((BinEQ + conditionalExp).setParseAction(pushFirst))
 
 # Statements
+comment = Literal('//') + restOfLine
 statement = Forward()  # return, declare, assign, if,
 statementBlock = (statement | LBrace + ZeroOrMore(statement) + RBrace)
 ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
 elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
-declaration = dataType('dataType') + space + identifier('varName') + Optional(ASSIGN + expression('initialValue'))
+declaration = Optional(Literal('const') | Word('__', alphanums+'_')) + dataType('dataType') + space + \
+              ((_atom | identifier)('varName')) + Optional(ASSIGN + expression('initialValue'))
 assignment = expression('left') + ASSIGN + expression('right')
 statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
             | (declaration + semicolon)('Declaration')  # Declaration [Initialization]
@@ -136,11 +138,16 @@ statement << ((Literal("return") + space + expression('retExp') + semicolon)('Re
                LParen + expression('cond') + RParen + semicolon)('DoWhile')
             | (oneOf("break continue __syncthreads()") + semicolon)('Single')
             | (Optional(expression) + semicolon)('Exp')
+            | Literal('#') + restOfLine('Single')
             )
+statement.ignore(comment)
 
 # Function
 argList = expression + ZeroOrMore(Literal(',') + expression)  # exp, exp, exp ...
-initArgList = delimitedList(Optional(Literal('const')) + dataType + identifier)
-funcDeclare = dataType('returnType') + identifier('fnName') + LParen + Optional(initArgList)('initArgs') + \
-              RParen + LBrace + ZeroOrMore(statement) + RBrace
-funcCall << identifier('fnName') + LParen + Optional(argList)('arguList') + RParen
+initArgList = delimitedList(Optional(Literal('const')) + dataType + Optional(Literal('const')) + identifier)
+funcDeclare = Optional(Literal('template') + Literal('<') + delimitedList((dataType | Literal('typename')) +
+              identifier) + Literal('>')) + Word('__', alphanums+'_') + Optional(Literal('static')) + dataType('returnType') + identifier('fnName') + \
+              LParen + Optional(initArgList)('initArgs') + RParen + LBrace + ZeroOrMore(statement) + RBrace
+funcDeclare.ignore(comment)
+funcCall << identifier('fnName') + Optional(Literal('<') + dataType + Literal('>'))('T') + LParen + \
+            Optional(argList)('arguList') + RParen
