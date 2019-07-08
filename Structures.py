@@ -12,6 +12,22 @@ def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
     exit(0)
 
+def findField(content, start, end):
+    temp = content.find(start)
+    if temp == -1:
+        return None
+    st = [temp]
+    contP = temp + 1
+    lastEnd = None
+    while len(st) != 0:
+        if content[contP] == start:
+            st.append(contP)
+        elif content[contP] == end:
+            lastEnd = contP
+            st.remove(st[-1])
+        contP += 1
+    return lastEnd
+
 def parseStatement(content):
     if content == ';':
         return None
@@ -56,14 +72,15 @@ class Program(ASTNode):
     def __init__(self, path):
         self.path = path
         self.functionList = []
-        f = open(self.path)
+        f = open(self.path, 'r')
         self.content = f.read()
         f.close()
         self.parseFunctions()
 
     def parseFunctions(self):
-        parseResult = funcDeclare.scanString(self.content)
-        for x in parseResult:
+        scanResult = funcDeclare.scanString(self.content)
+        self.content = self.content.expandtabs()
+        for x in scanResult:
             self.functionList.append(FunctionDeclare(self.content[x[1]:x[2]]))
         if not self.functionList:
             fail()
@@ -139,7 +156,8 @@ class If(Statement):
 
         ifBound = list(ifPart.scanString(self.content))[0]
         ifContent = self.content[ifBound[1]:ifBound[2]]
-        self.condition = Expression(ifContent[ifContent.find('(')+1:ifContent.find(')')])
+        ifTemp = findField(ifContent, '(', ')')
+        self.condition = Expression(ifContent[ifContent.find('(')+1:ifTemp])
         ifExclude = list((Literal("if") + LParen + expression('condExp') + RParen).scanString(ifContent))[0]
         ifContent = ifContent[ifExclude[2]+1:]
         elseContent = self.content[ifBound[2]+1:]
@@ -270,8 +288,8 @@ class Expression(ASTNode):
                 arguNum = funcInfo['arguNum']
                 if index - arguNum < 0:
                     fail("Failed to construct AST for expression!: Function Call")
-                parseResult = funcCall.parseString(self.content)
-                if 'T' in parseResult.asDict():
+                tempScan = list((Literal(funcName) + Literal('<')).scanString(self.content))
+                if tempScan:
                     funcName = self.content[:self.content.find('>')+1]
                 FunCall = FunctionCall(funcName, postfixTokens[index - arguNum:index])
                 postfixTokens[index-arguNum] = FunCall

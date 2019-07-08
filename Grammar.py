@@ -98,7 +98,7 @@ dataType = (Word(alphas+'_', alphanums+'_') + Literal('*') | Word(alphas+'_', al
 expression = Forward()
 funcCall = Forward()
 atom = ((0,None) * preUnaryOp + (Group(funcCall).setParseAction(pushFunc) | (Literal("false") | Literal("true") |
-        number | identifier).setParseAction(pushFirst)| Group(LParen + expression + RParen)) +
+        number | identifier | QuotedString('"')).setParseAction(pushFirst)| Group(LParen + expression + RParen)) +
         (0,None) * postUnaryOp).setParseAction(pushUnary)
 _atom = atom + ZeroOrMore((Literal('[') + Optional(expression) + Literal(']')).setParseAction(pushFirst))
 factor = _atom + ZeroOrMore(((Literal('.') | Literal('->')) + _atom).setParseAction(pushFirst))
@@ -117,11 +117,13 @@ conditionalExp = ORexpression + Optional((Literal("?") + ORexpression + Literal(
 expression << conditionalExp + ZeroOrMore((BinEQ + conditionalExp).setParseAction(pushFirst))
 
 # Statements
-comment = Literal('//') + restOfLine
+comment = Literal('//') + restOfLine | nestedExpr("/**", "*/")
 statement = Forward()  # return, declare, assign, if,
 statementBlock = (statement | LBrace + ZeroOrMore(statement) + RBrace)
 ifPart = Literal("if") + LParen + expression('condExp') + RParen + statementBlock('IfBlock')
+ifPart.ignore(comment)
 elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
+elsePart.ignore(comment)
 declaration = Optional(Literal('const') | Word('__', alphanums+'_')) + dataType('dataType') + space + \
               ((_atom | identifier)('varName')) + Optional(ASSIGN + expression('initialValue'))
 assignment = expression('left') + ASSIGN + expression('right')
