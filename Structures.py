@@ -94,9 +94,9 @@ class FunctionDeclare(ASTNode):
         self.getArgs()
 
     def parseFunction(self):
-        parseResult = funcDeclare.parseString(self.content)
+        parseResult = funcDeclare.parseString(self.content).asDict()
         self.returnType = parseResult['returnType']
-        self.fnName = parseResult['fnName']
+        self.fnName = parseResult['fnName'][0]
         self.statementList = []
         scanResult = statement.scanString(self.content)
         self.content = self.content.expandtabs()  # To fix the wrong start & end location
@@ -142,11 +142,25 @@ class Return(Statement):
 
 class Declaration(Statement):
     def parse(self):
-        self.dataType = self.parseResultDict['dataType']
-        self.dataType = self.content[:self.content.find(self.dataType) + len(self.dataType)]
-        self.varName = self.parseResultDict['varName']
-        if 'initialValue' in self.parseResultDict:
-            self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';',''))
+        self.declareList = None
+        if ',' not in self.content:
+            self.dataType = self.parseResultDict['dataType']
+            self.dataType = self.content[:self.content.find(self.dataType) + len(self.dataType)]
+            self.varName = self.parseResultDict['varName']
+            if 'initialValue' in self.parseResultDict:
+                self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';',''))
+        else:
+            splitList = self.content.split(",")
+            self.declareList = []
+            for i in range(len(splitList)):
+                if i == 0:
+                    content = splitList[i] + ';'
+                    parseResult = statement.parseString(content)
+                    self.declareList.append(Declaration(content, parseResult))
+                else:
+                    content = self.declareList[0].dataType + ' ' + splitList[i] + '' if i == len(splitList)-1 else ';'
+                    parseResult = statement.parseString(content)
+                    self.declareList.append(Declaration(content, parseResult))
 
 
 class If(Statement):
@@ -365,12 +379,23 @@ class TernaryOp(ASTNode):
         self.no = no
 
 
+def kernelAST(path, funcName):
+    P = Program(path)  # Build AST with P as the root node
+    for function in P.functionList:
+        if function.fnName == funcName:
+            return function
+    print('No such kernel function matched!')
+    return None
+
+
+
+
 if __name__ == "__main__":
-    stage = 3
-    dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
-    def test(path):
-        P = Program(dir + path)
-        print('Succeed')
+    # stage = 9
+    # dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
+    # def test(path):
+    #     P = Program(dir + path)
+    #     print('Succeed')
 
     # stage 3
     # test("add.c")
@@ -439,5 +464,8 @@ if __name__ == "__main__":
     # test('precedence.c')
     # test('variable_as_arg.c')
 
-    P = Program('D:/DATA/Python_ws/CUDA_Parser/test.c')
-    print('SUCCEED!')
+    path = 'D:/DATA/Python_ws/CUDA_Parser/test.cpp'
+    funcName = '_sum_reduce'
+    functionAST = kernelAST(path, funcName)
+    print("finish")
+

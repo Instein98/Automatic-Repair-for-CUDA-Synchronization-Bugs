@@ -90,7 +90,7 @@ preUnaryOp = oneOf("! - ~ ++ -- * &")  # must have space separator
 postUnaryOp = oneOf("++ --")
 
 number = Regex(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?")
-identifier = Word(alphas+'_', alphanums+'_')
+identifier = Word(alphas+'_', alphanums+'_') + Optional(Literal("[]"))
 space = White(min=1)
 dataType = (Word(alphas+'_', alphanums+'_') + Literal('*') | Word(alphas+'_', alphanums+'_'))
 
@@ -125,7 +125,7 @@ ifPart.ignore(comment)
 elsePart = Optional(Literal("else") + statementBlock('ElseBlock'))
 elsePart.ignore(comment)
 declaration = Optional(Literal('const') | Word('__', alphanums+'_')) + dataType('dataType') + space + \
-              ((_atom | identifier)('varName')) + Optional(ASSIGN + expression('initialValue'))
+              delimitedList(((_atom | identifier)('varName')) + Optional(ASSIGN + expression('initialValue')))
 assignment = expression('left') + ASSIGN + expression('right')
 statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
             | (declaration + semicolon)('Declaration')  # Declaration [Initialization]

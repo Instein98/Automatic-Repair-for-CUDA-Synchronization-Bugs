@@ -24,10 +24,10 @@
 
 // In this file is the CUDA code of the CUDA kernels, plus the ANSI-C wrappers
 
-#include <cfloat>
-#include <limits>
-#include <math_constants.h>
-#include "cudamatrix/cu-kernels-ansi.h"
+//#include <cfloat>
+//#include <limits>
+//#include <math_constants.h>
+//#include "cudamatrix/cu-kernels-ansi.h"
 
 
 
