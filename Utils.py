@@ -1,3 +1,5 @@
+import re
+
 def keywords():
     keywords = [
         "auto",
@@ -83,3 +85,17 @@ def delimiters():
         ">>": "IN",
     }
     return delimiters
+
+
+def getFunction(content, fnName):
+    """
+    template<typename Real>
+    __device__
+    static Real _sum_reduce(Real buffer[]) {
+    :param content:
+    :param fnName:
+    :return:
+    """
+    pattern = re.compile(r"[\s\S]*?%s[\s]*\(.*?\)[\s]*\{([\s\S]*?)\}[\s\S]*?" % fnName)
+    m = pattern.match(content)
+    return m.group(1)

@@ -127,7 +127,7 @@ elsePart.ignore(comment)
 declaration = Optional(Literal('const') | Word('__', alphanums+'_')) + dataType('dataType') + space + \
               delimitedList(((_atom | identifier)('varName')) + Optional(ASSIGN + expression('initialValue')))
 assignment = expression('left') + ASSIGN + expression('right')
-statement << ((Literal("return") + space + expression('retExp') + semicolon)('Return')  # return + exp
+statement << ((Literal("return") + Optional(space + expression('retExp')) + semicolon)('Return')  # return + exp
             | (declaration + semicolon)('Declaration')  # Declaration [Initialization]
             | (assignment + semicolon)('Assignment')  # Assignment
             | (ifPart + elsePart)('If')  # If statement
@@ -147,8 +147,7 @@ statement.ignore(comment)
 # Function
 argList = expression + ZeroOrMore(Literal(',') + expression)  # exp, exp, exp ...
 initArgList = delimitedList(Optional(Literal('const')) + dataType + Optional(Literal('const')) + identifier)
-funcDeclare = Optional(Literal('template') + Literal('<') + delimitedList((dataType | Literal('typename')) +
-              identifier) + Literal('>')) + Word('__', alphanums+'_') + Optional(Literal('static')) + dataType('returnType') + identifier('fnName') + \
+funcDeclare = Word('__', alphanums+'_') + Optional(Literal('static')) + dataType('returnType') + identifier('fnName') + \
               LParen + Optional(initArgList)('initArgs') + RParen + LBrace + ZeroOrMore(statement) + RBrace
 funcDeclare.ignore(comment)
 funcCall << identifier('fnName') + Optional(Literal('<') + dataType + Literal('>'))('T') + LParen + \

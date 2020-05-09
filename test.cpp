@@ -52,7 +52,7 @@ static Real _sum_reduce(Real buffer[]) {
       }
       buffer[threadIdx.x - halfPoint] += temp;
     }
-    __syncthreads();
+    __syncthreads();  // BD
     nTotalThreads = ((1 + nTotalThreads) >> 1); // divide by two.
   }
   // the result
@@ -74,7 +74,7 @@ static void _copy_low_upp(Real* A, MatrixDim dimA) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   int j = blockIdx.y * blockDim.y + threadIdx.y;
   if (i <= j || i >= dimA.rows)
-    return;
+    return;  // expression ??
   int index_1 = i * dimA.stride + j;
   int index_2 = j * dimA.stride + i;
   A[index_2] = A[index_1];
@@ -164,7 +164,12 @@ static void _copy_from_mat_trans(Real* mat_out, const OtherReal* mat_in,
   // Use shared meme to achieve both coalesced memory reading and writing
   // '+1' to avoid bank conflict when reading sbuf
   __shared__ Real sbuf[TileDim][TileDim + 1];
-
+  const int x = 50;
+  int a = x++;
+  a = ++x;
+  a = a + x * 10;
+  a = a * x + 10;
+  a = a * (x + 10);
   const int32_cuda i_in = blockIdx.y * TileDim + threadIdx.y; // row-index
   const int32_cuda j_in = blockIdx.x * TileDim + threadIdx.x; // col-index
   const int32_cuda tile_stride_in = CU1DBLOCK / TileDim * d_in.stride;

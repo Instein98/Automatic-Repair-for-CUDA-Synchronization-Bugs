@@ -1,16 +1,20 @@
 from Grammar import *
 from abc import ABC, abstractmethod
+from Parser import *
 
 
-unaryOperator = ['preUnary --', 'preUnary ++','preUnary ~', 'preUnary !', 'preUnary -', 'preUnary &',
+unaryOperator = ['preUnary --', 'preUnary ++', 'preUnary ~', 'preUnary !', 'preUnary -', 'preUnary &',
                  'preUnary *', 'postUnary --', 'postUnary ++']
+unaryLiteral = ['--', '++', '~', '!', '-', '&', '*', '--', '++']
 binaryOperator = ['+', '-', '*', '/', '>', '>=', '<', '<=', '==', '!=', '&&', '||', '%', '<<', '>>',
                   '/=', '*=', '%=', '+=', '-=', '<<=', '>>=', '&=', '^=', '|=', '.', '->']
 ternaryOperator = ['?']
 
+
 def fail(str = "!!!!!!! PARSE FAILED !!!!!!!!"):
     print(str)
     exit(0)
+
 
 def findField(content, start, end):
     temp = content.find(start)
@@ -27,6 +31,7 @@ def findField(content, start, end):
             st.remove(st[-1])
         contP += 1
     return lastEnd
+
 
 def parseStatement(content):
     if content == ';':
@@ -59,12 +64,36 @@ def parseStatement(content):
     return None
 
 
-class ASTNode(object):
+def outputNode(node):
+    if type(node) == str:
+        return node
+    else:
+        return node.output()
+
+
+def getStatementListOutput(sList, currentIndentLevel):
+    res = ''
+    for statement in sList:
+        if type(statement) == Expression:
+            expr = statement.output()[1:-1]  # removing ( and )
+            res += (currentIndentLevel + 1) * '\t' + expr + ';\n'
+        else:
+            res += statement.output(currentIndentLevel + 1)  # assume output of this include ; and \n
+    return res
+
+
+
+class ASTNode(ABC):
     def __init__(self, content):
         self.content = content  # origin text of the node
 
     def __str__(self):
         pass
+
+    @abstractmethod
+    def output(self, indentLevel=0):
+        pass
+
     __repr__ = __str__
 
 
@@ -116,16 +145,29 @@ class FunctionDeclare(ASTNode):
             argInfo = arg.rsplit(' ',1)
             self.argList.append((argInfo[0].strip(), argInfo[1].strip()))
 
+    def output(self, indentLevel=0):
+        res = indentLevel*'\t' + self.content[:self.content.find('{')+1] + '\n'
+        # for statement in self.statementList:
+        #     res += statement.output(indentLevel+1)
+        res += getStatementListOutput(self.statementList, indentLevel)
+        res += indentLevel*'\t' + '}\n'
+        return res
+
 
 class Statement(ASTNode, ABC):
     def __init__(self, content, parseResult):
         super().__init__(content)
-        self.parseResult = parseResult
-        self.parseResultDict = parseResult.asDict()
-        self.parse()
+        if parseResult is not None:
+            self.parseResult = parseResult
+            self.parseResultDict = parseResult.asDict()
+            self.parse()
 
     @abstractmethod
     def parse(self):
+        pass
+
+    @abstractmethod
+    def output(self, indentLevel=0):
         pass
 
 
@@ -134,15 +176,32 @@ class Assignment(Statement):
         self.leftSide = Expression(self.content[:self.content.find('=')])
         self.rightSide = Expression(self.content[self.content.find('=')+1:].replace(';',''))
 
+    def output(self, indentLevel):
+        res = indentLevel*'\t' + self.leftSide.output() if type(self.leftSide) != str else self.leftSide
+        res += " = "
+        res += self.rightSide.output() + ';\n' if type(self.leftSide) != str else self.leftSide + ';\n'
+        return res
+
 
 class Return(Statement):
     def parse(self):
-        self.returnExp = Expression(self.content[self.content.find('return')+6:].replace(';',''))
+        returnTarget = self.content[self.content.find('return')+6:].replace(';', '')
+        if len(returnTarget.strip()) == 0:
+            self.returnExp = Single('return', None)
+        else:
+            self.returnExp = Expression(returnTarget)
+
+    def output(self, indentLevel=0):
+        if type(self.returnExp) == Single:
+            return indentLevel*'\t' + self.returnExp.output()
+        else:
+            return indentLevel*'\t' + self.returnExp.output() + ';\n'
 
 
 class Declaration(Statement):
     def parse(self):
         self.declareList = None
+        self.initExp = None
         if ',' not in self.content:
             self.dataType = self.parseResultDict['dataType']
             self.dataType = self.content[:self.content.find(self.dataType) + len(self.dataType)]
@@ -161,6 +220,19 @@ class Declaration(Statement):
                     content = self.declareList[0].dataType + ' ' + splitList[i] + '' if i == len(splitList)-1 else ';'
                     parseResult = statement.parseString(content)
                     self.declareList.append(Declaration(content, parseResult))
+
+    def output(self, indentLevel=0):
+        # __shared__ Real sbuf[TileDim][TileDim + 1];
+        if "__shared__" in self.content:
+            return indentLevel*'\t' + self.content + '\n'
+        res = indentLevel*'\t'
+        if ',' not in self.content:
+            res += self.dataType + ' '
+            res += self.varName + ' '
+            if self.initExp is not None:
+                res += ' = ' + self.initExp.output()
+            res += ';\n'
+        return res
 
 
 class If(Statement):
@@ -186,10 +258,29 @@ class If(Statement):
             if state != None:
                 self.elseStatementList.append(state)
 
+    def output(self, indentLevel=0):
+        indent = indentLevel*'\t'
+        res = indent + 'if (' + self.condition.output() + '){\n'
+        for statement in self.ifStatementList:
+            res += statement.output(indentLevel+1)
+        if len(self.elseStatementList) == 0:
+            res += indent + '}\n'
+        else:
+            res += indent + '} else {\n'
+            res += getStatementListOutput(self.elseStatementList, indentLevel)
+            # for statement in self.elseStatementList:
+            #     res += statement.output(indentLevel+1)
+            res += indent + '}\n'
+        return res
 
+
+# todo for(:) ?
 class For(Statement):
     def parse(self):
         self.statementList = []
+        self.initialization = None
+        self.loopCondition = None
+        self.postStatement = None
         leftParenPos = self.content.find('(')
         rightParenPos = self.content.find(')')
         firstSemiPos = self.content.find(';')
@@ -216,6 +307,29 @@ class For(Statement):
             if state != None:
                 self.statementList.append(state)
 
+    def output(self, indentLevel=0):
+        indent = indentLevel*'\t'
+        res = indent + 'for ('
+        if self.initialization is not None:
+            if isinstance(self.initialization, Statement):
+                res += self.initialization.output(0).replace('\n', '')
+            elif type(self.initialization) == Expression:
+                res += self.initialization.output(0)[1:-1].strip() + ';'  # remove '(', ')'
+        if self.loopCondition is not None and type(self.loopCondition) == Expression:
+            res += self.loopCondition.output(0)[1:-1] + ';'
+        if self.postStatement is not None:
+            if type(self.postStatement) == Statement:
+                output = self.postStatement.output(0)
+                res += output[:output.find(';')]  # remove ; and \n
+            elif type(self.postStatement) == Expression:
+                res += self.postStatement.output(0)[1:-1]
+        res += '){\n'
+        res += getStatementListOutput(self.statementList, indentLevel)
+        # for statement in self.statementList:
+        #     res += statement.output(indentLevel+1)
+        res += indent + '}\n'
+        return res
+
 
 class While(Statement):
     def parse(self):
@@ -228,6 +342,17 @@ class While(Statement):
             state = parseStatement(stateContent[x[1]:x[2]])
             if state != None:
                 self.statementList.append(state)
+
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        res = indent + 'while ('
+        res += self.loopCondition.output()
+        res += '){\n'
+        res += getStatementListOutput(self.statementList, indentLevel)
+        # for statement in self.statementList:
+        #     res += statement.output(indentLevel+1)
+        res += indent + '}\n'
+        return res
 
 
 class DoWhile(Statement):
@@ -242,11 +367,25 @@ class DoWhile(Statement):
             if state != None:
                 self.statementList.append(state)
 
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        res = indent + 'do {\n'
+        res += getStatementListOutput(self.statementList, indentLevel)
+        # for statement in self.statementList:
+        #     res += statement.output(indentLevel+1)
+        res += indent + '} while ('
+        res += self.loopCondition.output() if type(self.loopCondition) == Expression else '???'
+        res += ');\n'
+
 
 class Single(Statement):
     """break/continue etc."""
     def parse(self):
         pass
+
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        return indent + self.content + '\n'
 
 
 class Expression(ASTNode):
@@ -254,6 +393,12 @@ class Expression(ASTNode):
         super().__init__(content)
         self.childNode = None
         self.parseExpression()
+
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        if type(self.childNode) == str:
+            return self.childNode
+        return indent + self.childNode.output()
 
     def parseExpression(self):
         postfixTokens = parseExp(self.content).copy()
@@ -305,7 +450,7 @@ class Expression(ASTNode):
                 tempScan = list((Literal(funcName) + Literal('<')).scanString(self.content))
                 if tempScan:
                     funcName = self.content[:self.content.find('>')+1]
-                FunCall = FunctionCall(funcName, postfixTokens[index - arguNum:index])
+                FunCall = FunctionCall(self.content, funcName, postfixTokens[index - arguNum:index])
                 postfixTokens[index-arguNum] = FunCall
                 for i in range(0, arguNum):
                     del postfixTokens[index-i]
@@ -332,7 +477,8 @@ class Expression(ASTNode):
             funcInfo = postfixTokens[index]
             funcName = funcInfo['funcName']
             arguList = []
-            postfixTokens[0] = FunctionCall(funcName, arguList)
+            # todo how to get function content?
+            postfixTokens[0] = FunctionCall(None, funcName, arguList)
 
         self.childNode = postfixTokens[0]
 
@@ -343,15 +489,22 @@ class Array(ASTNode):
         self.arr = arr
         self.index = index
 
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        return indent + outputNode(self.arr) + '[' + outputNode(self.index) + ']'
 
 
 class FunctionCall(ASTNode):
-    def __init__(self, funcName, arguList):
-        super().__init__(funcName)
+    def __init__(self, content, funcName, arguList):
+        super().__init__(content)
         self.funcName = funcName
         self.arguList = arguList
         # content = funcName + str(arguList).replace('[', '(').replace(']', ')')
         # super().__init__('content')
+
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        return indent + self.content
 
 
 class UnaryOp(ASTNode):
@@ -360,6 +513,15 @@ class UnaryOp(ASTNode):
         self.operator = op
         self.operand = opr
 
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        for i, operator in enumerate(unaryOperator):
+            if self.operator == operator:
+                if 'pre' in operator:
+                    return indent + unaryLiteral[i] + self.operand
+                elif 'post' in operator:
+                    return indent + self.operand + unaryLiteral[i]
+
 
 class BinOp(ASTNode):
     def __init__(self, op, left, right):
@@ -367,6 +529,18 @@ class BinOp(ASTNode):
         self.op = op
         self.left = left
         self.right = right
+
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        res = indent
+        if self.op != '.':  # do not need ( for a.b
+            res += '('
+        res += self.left if type(self.left) == str else self.left.output()
+        res += self.op
+        res += self.right if type(self.right) == str else self.right.output()
+        if self.op != '.':  # do not need () for a.b
+            res += ')'
+        return res
 
 
 class TernaryOp(ASTNode):
@@ -378,6 +552,10 @@ class TernaryOp(ASTNode):
         self.yes = yes
         self.no = no
 
+    def output(self, indentLevel=0):
+        indent = indentLevel * '\t'
+        return indent + self.content
+
 
 def kernelAST(path, funcName):
     P = Program(path)  # Build AST with P as the root node
@@ -388,84 +566,15 @@ def kernelAST(path, funcName):
     return None
 
 
-
-
 if __name__ == "__main__":
-    # stage = 9
-    # dir = "D:/DATA/Python_ws/CUDA_Parser/test/stage_%d/valid/" % stage
-    # def test(path):
-    #     P = Program(dir + path)
-    #     print('Succeed')
-
-    # stage 3
-    # test("add.c")
-
-    # stage 4
-    # test("and_false.c")
-    # test("and_true.c")
-    # test("eq_false.c")
-    # test("eq_true.c")
-    # test("ge_false.c")
-    # test("ge_true.c")
-    # test("gt_false.c")
-    # test("gt_true.c")
-    # test("le_false.c")
-    # test("le_true.c")
-    # test("lt_false.c")
-    # test("lt_true.c")
-    # test("ne_false.c")
-    # test("ne_true.c")
-    # test("or_false.c")
-    # test("or_true.c")
-    # test("precedence.c")
-    # test("precedence_2.c")
-    # test("precedence_3.c")
-    # test("precedence_4.c")
-
-    # #stage 5
-    # test("assign.c")
-
-    #stage 6
-    # test("statement/else.c")
-    # test("statement/if_nested.c")
-    # test("statement/if_nested_3.c")
-    # test("statement/if_nested_5.c")
-    # test("statement/if_taken.c")
-    # test("statement/multiple_if.c")
-    # test("expression/assign_ternary.c")
-    # test("expression/multiple_ternary.c")
-
-    # stage 8
-    # test("break.c")
-    # test("continue.c")
-    # test("continue_empty_post.c")
-    # test("do_while.c")
-    # test("empty_expression.c")
-    # test("for.c")
-    # test("for_decl.c")
-    # test("for_empty.c")
-    # test("for_nested_scope.c")
-    # test("for_variable_shadow.c")
-    # test("nested_break.c")
-    # test("nested_while.c")
-    # test("return_in_while.c")
-
-    # stage 9
-    # test('expression_args.c')
-    # test('fib.c')
-    # test('forward_decl.c')
-    # test('forward_decl_args.c')
-    # test('forward_decl_multi_arg.c')
-    # test('fun_in_expr.c')
-    # test('hello_world.c')
-    # test('multi_arg.c')
-    # test('mutual_recursion.c')
-    # test('no_arg.c')
-    # test('precedence.c')
-    # test('variable_as_arg.c')
-
-    path = 'D:/DATA/Python_ws/CUDA_Parser/test.cpp'
-    funcName = '_sum_reduce'
-    functionAST = kernelAST(path, funcName)
-    print("finish")
-
+    ParserElement.enablePackrat()
+    # fnName = "_sum_reduce"  # OK
+    # fnName = "_copy_low_upp"  # roughly OK, "return;" as expression
+    fnName = "_copy_from_mat_trans"
+    sourcePath = "D:/DATA/Python_ws/CUDA_Parser/test.cpp"
+    parser = Parser()
+    with open(sourcePath) as source:
+        content = source.read()
+        fnContent = parser.getFunctionContent(fnName, content)
+    func = FunctionDeclare(fnContent)
+    print(func.output())
