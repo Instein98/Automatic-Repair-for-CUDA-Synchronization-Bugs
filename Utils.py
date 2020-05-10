@@ -99,3 +99,14 @@ def getFunction(content, fnName):
     pattern = re.compile(r"[\s\S]*?%s[\s]*\(.*?\)[\s]*\{([\s\S]*?)\}[\s\S]*?" % fnName)
     m = pattern.match(content)
     return m.group(1)
+
+
+def getLineNoByPos(content, position):
+    lineNo = 0
+    for i, a in enumerate(content):
+        if a == '\n':
+            lineNo += 1
+        if i == position:
+            return lineNo
+    return None
+

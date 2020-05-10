@@ -155,7 +155,7 @@ class Parser:
                 res += line + "\n"
             i +=1
 
-        return res
+        return res, fnStartLineNum
 
 
 if __name__ == '__main__':

@@ -33,33 +33,33 @@ def findField(content, start, end):
     return lastEnd
 
 
-def parseStatement(content):
+def parseStatement(content, baseLineNo):
     if content == ';':
         return None
     parseResult = statement.parseString(content)
     parseResultDict = parseResult.asDict()
     if 'If' in parseResultDict:
         if parseResult.asList()[0] == 'if':
-            return If(content, parseResult)
+            return If(content, parseResult, baseLineNo)
     if 'For' in parseResultDict:
         if parseResult.asList()[0] == 'for':
-            return For(content, parseResult)
+            return For(content, parseResult, baseLineNo)
     if 'While' in parseResultDict:
         if parseResult.asList()[0] == 'while':
-            return While(content, parseResult)
+            return While(content, parseResult, baseLineNo)
     if 'DoWhile' in parseResultDict:
         if parseResult.asList()[0] == 'do':
-            return DoWhile(content, parseResult)
+            return DoWhile(content, parseResult, baseLineNo)
     if 'Return' in parseResultDict:
-        return Return(content, parseResult)
+        return Return(content, parseResult, baseLineNo)
     if 'Declaration' in parseResultDict:
-        return Declaration(content, parseResult)
+        return Declaration(content, parseResult, baseLineNo)
     if 'Assignment' in parseResultDict:
-        return Assignment(content, parseResult)
+        return Assignment(content, parseResult, baseLineNo)
     if 'Single' in parseResultDict:
-        return Single(content, parseResult)
+        return Single(content, parseResult, baseLineNo)
     if 'Exp' in parseResultDict:
-        return Expression(content.replace(';', ''))
+        return Expression(content.replace(';', ''), baseLineNo)
 
     return None
 
@@ -84,8 +84,9 @@ def getStatementListOutput(sList, currentIndentLevel):
 
 
 class ASTNode(ABC):
-    def __init__(self, content):
+    def __init__(self, content, baseLineNo):
         self.content = content  # origin text of the node
+        self.baseLineNo = baseLineNo  # the line number of the node
 
     def __str__(self):
         pass
@@ -110,14 +111,14 @@ class Program(ASTNode):
         scanResult = funcDeclare.scanString(self.content)
         self.content = self.content.expandtabs()
         for x in scanResult:
-            self.functionList.append(FunctionDeclare(self.content[x[1]:x[2]]))
+            self.functionList.append(FunctionDeclare(self.content[x[1]:x[2]], self.baseLineNo))
         if not self.functionList:
             fail()
 
 
 class FunctionDeclare(ASTNode):
-    def __init__(self, content):
-        super().__init__(content)
+    def __init__(self, content, baseLineNo):
+        super().__init__(content, baseLineNo)
         self.argList = []
         self.parseFunction()
         self.getArgs()
@@ -130,7 +131,8 @@ class FunctionDeclare(ASTNode):
         scanResult = statement.scanString(self.content)
         self.content = self.content.expandtabs()  # To fix the wrong start & end location
         for x in scanResult:  # the content of each statement
-            state = parseStatement(self.content[x[1]:x[2]])
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(self.content[x[1]:x[2]], relativeLineNo + self.baseLineNo)
             if state != None:
                 self.statementList.append(state)
         if not self.statementList:
@@ -155,8 +157,8 @@ class FunctionDeclare(ASTNode):
 
 
 class Statement(ASTNode, ABC):
-    def __init__(self, content, parseResult):
-        super().__init__(content)
+    def __init__(self, content, parseResult, baseLineNo):
+        super().__init__(content, baseLineNo)
         if parseResult is not None:
             self.parseResult = parseResult
             self.parseResultDict = parseResult.asDict()
@@ -173,8 +175,8 @@ class Statement(ASTNode, ABC):
 
 class Assignment(Statement):
     def parse(self):
-        self.leftSide = Expression(self.content[:self.content.find('=')])
-        self.rightSide = Expression(self.content[self.content.find('=')+1:].replace(';',''))
+        self.leftSide = Expression(self.content[:self.content.find('=')], self.baseLineNo)
+        self.rightSide = Expression(self.content[self.content.find('=')+1:].replace(';', ''), self.baseLineNo)
 
     def output(self, indentLevel):
         res = indentLevel*'\t' + self.leftSide.output() if type(self.leftSide) != str else self.leftSide
@@ -187,9 +189,9 @@ class Return(Statement):
     def parse(self):
         returnTarget = self.content[self.content.find('return')+6:].replace(';', '')
         if len(returnTarget.strip()) == 0:
-            self.returnExp = Single('return', None)
+            self.returnExp = Single('return;', None, self.baseLineNo)
         else:
-            self.returnExp = Expression(returnTarget)
+            self.returnExp = Expression(returnTarget, self.baseLineNo)
 
     def output(self, indentLevel=0):
         if type(self.returnExp) == Single:
@@ -207,7 +209,7 @@ class Declaration(Statement):
             self.dataType = self.content[:self.content.find(self.dataType) + len(self.dataType)]
             self.varName = self.parseResultDict['varName']
             if 'initialValue' in self.parseResultDict:
-                self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';',''))
+                self.initExp = Expression(self.content[self.content.find('=') + 1:].replace(';', ''), self.baseLineNo)
         else:
             splitList = self.content.split(",")
             self.declareList = []
@@ -215,11 +217,11 @@ class Declaration(Statement):
                 if i == 0:
                     content = splitList[i] + ';'
                     parseResult = statement.parseString(content)
-                    self.declareList.append(Declaration(content, parseResult))
+                    self.declareList.append(Declaration(content, parseResult, self.baseLineNo))
                 else:
                     content = self.declareList[0].dataType + ' ' + splitList[i] + '' if i == len(splitList)-1 else ';'
                     parseResult = statement.parseString(content)
-                    self.declareList.append(Declaration(content, parseResult))
+                    self.declareList.append(Declaration(content, parseResult, self.baseLineNo))
 
     def output(self, indentLevel=0):
         # __shared__ Real sbuf[TileDim][TileDim + 1];
@@ -234,7 +236,7 @@ class Declaration(Statement):
             res += ';\n'
         return res
 
-
+#  todo ifContent line number not correct
 class If(Statement):
     def parse(self):
         self.ifStatementList = []
@@ -243,18 +245,22 @@ class If(Statement):
         ifBound = list(ifPart.scanString(self.content))[0]
         ifContent = self.content[ifBound[1]:ifBound[2]]
         ifTemp = findField(ifContent, '(', ')')
-        self.condition = Expression(ifContent[ifContent.find('(')+1:ifTemp])
+        self.condition = Expression(ifContent[ifContent.find('(')+1:ifTemp], self.baseLineNo)
         ifExclude = list((Literal("if") + LParen + expression('condExp') + RParen).scanString(ifContent))[0]
         ifContent = ifContent[ifExclude[2]+1:]
+        ifContentBaseLineNo = getLineNoByPos(self.content, self.content.index(ifContent)) + self.baseLineNo
         elseContent = self.content[ifBound[2]+1:]
         elseContent = elseContent[elseContent.find("else") + 4:]
+        elseContentBaseLineNo = getLineNoByPos(self.content, self.content.index(elseContent)) + self.baseLineNo
 
         for x in statement.scanString(ifContent):
-            state = parseStatement(ifContent[x[1]:x[2]])
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(ifContent[x[1]:x[2]], ifContentBaseLineNo + relativeLineNo)
             if state != None:
                 self.ifStatementList.append(state)
         for x in statement.scanString(elseContent):
-            state = parseStatement(elseContent[x[1]:x[2]])
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(elseContent[x[1]:x[2]], elseContentBaseLineNo + relativeLineNo)
             if state != None:
                 self.elseStatementList.append(state)
 
@@ -286,15 +292,15 @@ class For(Statement):
         firstSemiPos = self.content.find(';')
         secondSemiPos = self.content.find(';', firstSemiPos + 1)
         if 'init' in self.parseResultDict:
-            self.initialization = parseStatement(self.content[leftParenPos+1:firstSemiPos]+';')
+            self.initialization = parseStatement(self.content[leftParenPos+1:firstSemiPos]+';', self.baseLineNo)
         else:
             self.initialization = None
         if 'cond' in self.parseResultDict:
-            self.loopCondition = parseStatement(self.content[firstSemiPos+1:secondSemiPos]+';')
+            self.loopCondition = parseStatement(self.content[firstSemiPos+1:secondSemiPos]+';', self.baseLineNo)
         else:
             self.loopCondition = None
         if 'post' in self.parseResultDict:
-            self.postStatement = parseStatement(self.content[secondSemiPos+1:rightParenPos]+';')
+            self.postStatement = parseStatement(self.content[secondSemiPos+1:rightParenPos]+';', self.baseLineNo)
         else:
             self.postStatement = None
         forExclude = (Literal("for") + LParen + Optional((declaration | assignment)) + semicolon +
@@ -303,9 +309,11 @@ class For(Statement):
         stateContent = self.content[forExclude[2]+1:]
 
         for x in statement.scanString(stateContent):
-            state = parseStatement(stateContent[x[1]:x[2]])
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(stateContent[x[1]:x[2]], self.baseLineNo + relativeLineNo)
             if state != None:
                 self.statementList.append(state)
+
 
     def output(self, indentLevel=0):
         indent = indentLevel*'\t'
@@ -336,10 +344,11 @@ class While(Statement):
         self.statementList = []
         whileExclude = list((Literal("while") + LParen + expression + RParen).scanString(self.content))[0]
         whileContent = self.content[:whileExclude[2]+1]
-        self.loopCondition = Expression(whileContent[whileContent.find('(')+1 : whileContent.find(')')])
+        self.loopCondition = Expression(whileContent[whileContent.find('(')+1 : whileContent.find(')')], self.baseLineNo)
         stateContent = self.content[whileExclude[2]+1:]
         for x in statement.scanString(stateContent):
-            state = parseStatement(stateContent[x[1]:x[2]])
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(stateContent[x[1]:x[2]], self.baseLineNo + relativeLineNo)
             if state != None:
                 self.statementList.append(state)
 
@@ -360,10 +369,12 @@ class DoWhile(Statement):
         self.statementList = []
         whileExclude = list((Literal("while") + LParen + expression + RParen).scanString(self.content))[0]
         whileContent = self.content[whileExclude[1]:]  # the while part
-        self.loopCondition = parseStatement(whileContent[whileContent.find('(')+1:whileContent.find(')')]+';')
+        self.loopCondition = parseStatement(whileContent[whileContent.find('(')+1:whileContent.find(')')]+';',
+                                            self.baseLineNo + getLineNoByPos(self.content, self.content.index("while")))
         stateContent = self.content[:whileExclude[1]]
-        for x in statement.scanString(stateContent):
-            state = parseStatement(stateContent[x[1]:x[2]])
+        for x in statement.scanString(stateContent):  # the content of each statement
+            relativeLineNo = getLineNoByPos(self.content, x[1])
+            state = parseStatement(self.content[x[1]:x[2]], relativeLineNo + self.baseLineNo)
             if state != None:
                 self.statementList.append(state)
 
@@ -389,8 +400,8 @@ class Single(Statement):
 
 
 class Expression(ASTNode):
-    def __init__(self, content):
-        super().__init__(content)
+    def __init__(self, content, baseLineNo):
+        super().__init__(content, baseLineNo)
         self.childNode = None
         self.parseExpression()
 
@@ -412,7 +423,7 @@ class Expression(ASTNode):
             if postfixTokens[index] in unaryOperator:
                 if index - 1 < 0:
                     fail("Failed to construct AST for expression!: Unary Operator")
-                Uop = UnaryOp(postfixTokens[index], postfixTokens[index-1])
+                Uop = UnaryOp(postfixTokens[index], postfixTokens[index-1], self.baseLineNo)
                 postfixTokens[index-1] = Uop
                 del postfixTokens[index]
                 continue
@@ -421,7 +432,7 @@ class Expression(ASTNode):
             elif postfixTokens[index] in binaryOperator:
                 if index - 2 < 0:
                     fail("Failed to construct AST for expression!: Binary Operator")
-                Bop = BinOp(postfixTokens[index], postfixTokens[index-2], postfixTokens[index-1])
+                Bop = BinOp(postfixTokens[index], postfixTokens[index-2], postfixTokens[index-1], self.baseLineNo)
                 postfixTokens[index-2] = Bop
                 del postfixTokens[index]
                 del postfixTokens[index-1]
@@ -432,7 +443,7 @@ class Expression(ASTNode):
             elif postfixTokens[index] in ternaryOperator:
                 if index - 3 < 0:
                     fail("Failed to construct AST for expression!: Binary Operator")
-                Top = TernaryOp(postfixTokens[index], postfixTokens[index-3], postfixTokens[index-2], postfixTokens[index-1])
+                Top = TernaryOp(postfixTokens[index], postfixTokens[index-3], postfixTokens[index-2], postfixTokens[index-1], self.baseLineNo)
                 postfixTokens[index - 3] = Top
                 del postfixTokens[index]
                 del postfixTokens[index - 1]
@@ -450,7 +461,7 @@ class Expression(ASTNode):
                 tempScan = list((Literal(funcName) + Literal('<')).scanString(self.content))
                 if tempScan:
                     funcName = self.content[:self.content.find('>')+1]
-                FunCall = FunctionCall(self.content, funcName, postfixTokens[index - arguNum:index])
+                FunCall = FunctionCall(self.content, funcName, postfixTokens[index - arguNum:index], self.baseLineNo)
                 postfixTokens[index-arguNum] = FunCall
                 for i in range(0, arguNum):
                     del postfixTokens[index-i]
@@ -460,7 +471,7 @@ class Expression(ASTNode):
             elif postfixTokens[index] == '[':
                 if index - 2 < 0:
                     fail("Failed to construct AST for expression!: Array")
-                Arr = Array(postfixTokens[index - 2], postfixTokens[index - 1])
+                Arr = Array(postfixTokens[index - 2], postfixTokens[index - 1], self.baseLineNo)
                 postfixTokens[index - 2] = Arr
                 del postfixTokens[index]
                 del postfixTokens[index - 1]
@@ -478,14 +489,14 @@ class Expression(ASTNode):
             funcName = funcInfo['funcName']
             arguList = []
             # todo how to get function content?
-            postfixTokens[0] = FunctionCall(None, funcName, arguList)
+            postfixTokens[0] = FunctionCall(None, funcName, arguList, self.baseLineNo)
 
         self.childNode = postfixTokens[0]
 
 
 class Array(ASTNode):
-    def __init__(self, arr, index):
-        super().__init__('Array')
+    def __init__(self, arr, index, baseLineNo):
+        super().__init__('Array', baseLineNo)
         self.arr = arr
         self.index = index
 
@@ -495,8 +506,8 @@ class Array(ASTNode):
 
 
 class FunctionCall(ASTNode):
-    def __init__(self, content, funcName, arguList):
-        super().__init__(content)
+    def __init__(self, content, funcName, arguList, baseLineNo):
+        super().__init__(content, baseLineNo)
         self.funcName = funcName
         self.arguList = arguList
         # content = funcName + str(arguList).replace('[', '(').replace(']', ')')
@@ -508,8 +519,8 @@ class FunctionCall(ASTNode):
 
 
 class UnaryOp(ASTNode):
-    def __init__(self, op, opr):
-        super().__init__(op)
+    def __init__(self, op, opr, baseLineNo):
+        super().__init__(op, baseLineNo)
         self.operator = op
         self.operand = opr
 
@@ -524,8 +535,8 @@ class UnaryOp(ASTNode):
 
 
 class BinOp(ASTNode):
-    def __init__(self, op, left, right):
-        super().__init__(op)
+    def __init__(self, op, left, right, baseLineNo):
+        super().__init__(op, baseLineNo)
         self.op = op
         self.left = left
         self.right = right
@@ -545,8 +556,8 @@ class BinOp(ASTNode):
 
 class TernaryOp(ASTNode):
     """conditional expression: a ? b : c"""
-    def __init__(self, op, cond, yes, no):
-        super().__init__(op)
+    def __init__(self, op, cond, yes, no, baseLineNo):
+        super().__init__(op, baseLineNo)
         self.op = op
         self.cond = cond
         self.yes = yes
@@ -570,11 +581,13 @@ if __name__ == "__main__":
     ParserElement.enablePackrat()
     # fnName = "_sum_reduce"  # OK
     # fnName = "_copy_low_upp"  # roughly OK, "return;" as expression
-    fnName = "_copy_from_mat_trans"
-    sourcePath = "D:/DATA/Python_ws/CUDA_Parser/test.cpp"
+    fnName = "_copy_low_upp"
+    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
+    bugLine = 80
+    bugType = 0  # 0:DR 1:BD 2:RB
     parser = Parser()
     with open(sourcePath) as source:
         content = source.read()
-        fnContent = parser.getFunctionContent(fnName, content)
-    func = FunctionDeclare(fnContent)
+        fnContent, startLineNo = parser.getFunctionContent(fnName, content)
+    func = FunctionDeclare(fnContent, startLineNo)
     print(func.output())
