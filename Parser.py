@@ -109,7 +109,6 @@ class Parser:
         return res
 
     def getFunctionContent(self, functionName, content):
-        res = ''
         fnStartLineNum = None
         tokenList = self.tokenize(content)
         for i, token in enumerate(tokenList):
@@ -130,6 +129,7 @@ class Parser:
                         continue
         if fnStartLineNum is None:
             print("Function %s not found!!" % functionName)
+            return None
         i = j
         stack = []
         stack.append('{')
@@ -143,19 +143,28 @@ class Parser:
                 continue
         fnEndLineNum = tokenList[i].lineNum
 
+        fnPart = ''
+        frontPart = ''
+        endPart = ''
         lines = content.split("\n")
-        i = fnStartLineNum
-        while i <= fnEndLineNum:
-            line = lines[i-1]
-            if i == fnStartLineNum:
-                res += line[line.index('__'):] + "\n"
-            elif i == fnEndLineNum:
-                res += line[:line.index('}')+1] + "\n"
-            else:
-                res += line + "\n"
-            i +=1
+        for i, line in enumerate(lines):
+            lineNum = i+1
+            if lineNum < fnStartLineNum:
+                frontPart += line + '\n'
+            elif lineNum == fnStartLineNum:
+                tmp = line.index('__')
+                frontPart += line[:tmp]
+                fnPart += line[tmp:] + '\n'
+            elif fnStartLineNum < lineNum < fnEndLineNum:
+                fnPart += line + '\n'
+            elif lineNum == fnEndLineNum:
+                tmp = line.rindex('}')
+                fnPart += line[:tmp+1]
+                endPart += line[tmp+1:] + '\n'
+            elif lineNum > fnEndLineNum:
+                endPart += line + '\n'
+        return frontPart, fnPart, endPart, fnStartLineNum
 
-        return res, fnStartLineNum
 
 
 if __name__ == '__main__':

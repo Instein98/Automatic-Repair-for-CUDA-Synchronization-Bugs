@@ -147,13 +147,17 @@ class FunctionDeclare(ASTNode):
             fail()
 
     def getArgs(self):
-        argInfo = self.content[self.content.find('(')+1:self.content.find(')')]
-        if not argInfo.strip():
+        argContent = self.content[self.content.find('(')+1:self.content.find(')')]
+        if not argContent.strip():
             return
-        argInfo = argInfo.split(',')
-        for arg in argInfo:
-            argInfo = arg.rsplit(' ',1)
-            self.argList.append((argInfo[0].strip(), argInfo[1].strip()))
+        argContent = argContent.split(',')
+        for arg in argContent:
+            if '*' in arg:
+                idx = arg.rindex('*')
+                self.argList.append((arg[:idx+1].strip(), arg[idx+1:].strip()))
+            else:
+                argContent = arg.rsplit(' ', 1)
+                self.argList.append((argContent[0].strip(), argContent[1].strip()))
 
     def output(self, indentLevel=0):
         res = indentLevel*'\t' + self.content[:self.content.find('{')+1] + '\n'
@@ -631,13 +635,8 @@ def findTypeOfVariable(vName, fnRoot):
     return None
 
 
-def repair(sourcePath, fnName, bugLineNo: list, bugType: int):
-    parser = Parser()
-    with open(sourcePath) as source:
-        content = source.read()
-        fnContent, startLineNo = parser.getFunctionContent(fnName, content)
+def repair(fnContent, bugLineNo: list, bugType: int):
     func = FunctionDeclare(fnContent, startLineNo, None)
-    # bugStmt = [getStmtByLineNo(func, lineNo) for lineNo in bugLineNo]
     ivCount = 0  # intermediate variable
 
     # DR
@@ -659,13 +658,8 @@ def repair(sourcePath, fnName, bugLineNo: list, bugType: int):
                     if arrType[-1] == '*':
                         ivType = arrType[:-1]
 
-                # newAssignment1 = Assignment(ivType+" "+ivName+" "+originalContent[originalContent.find('='):] + ';',
-                #                             None, -1, bugStmt.parent)
                 newAssignment1 = parseStatement(ivType+" "+ivName+" "+originalContent[originalContent.find('='):] + ';',
                                                 -100, bugStmt.parent)
-                # newAssignment1.parse()
-                # newAssignment2 = Assignment(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
-                #                             None, -1, bugStmt.parent, barrierFn)
                 newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
                                                 -100, bugStmt.parent)
                 barrierFn = parseStatement('__syncthreads();', -100, bugStmt.parent)
@@ -679,6 +673,8 @@ def repair(sourcePath, fnName, bugLineNo: list, bugType: int):
                     bugStmt.next.previous = newAssignment2
 
                 targetStmtList = bugStmt.parent.children
+                if type(targetStmtList[0]) == list:  # if statement
+                    targetStmtList = targetStmtList[0] if bugStmt in targetStmtList[0] else targetStmtList[1]
                 targetPosition = targetStmtList.index(bugStmt)
                 targetStmtList.remove(bugStmt)
                 targetStmtList.insert(targetPosition, newAssignment2)
@@ -689,11 +685,20 @@ def repair(sourcePath, fnName, bugLineNo: list, bugType: int):
 
 if __name__ == "__main__":
     ParserElement.enablePackrat()
-    # fnName = "_sum_reduce"  # OK
-    # fnName = "_copy_low_upp"  # roughly OK, "return;" as expression
-    fnName = "_copy_low_upp"
-    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    bugLineNo = [80]  # may happen in two line [79, 80]
+    # fnName = "_copy_low_upp"
+    fnName = "moveArrayForwardDevice"
+    # sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
+    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/DR-test.cu"
+    # bugLineNo = [80]  # may happen in two line [79, 80]
+    bugLineNo = [3]
     bugType = 0  # 0:DR 1:BD 2:RB
-    repairedFnSource = repair(sourcePath, fnName, bugLineNo, bugType)
-    print(repairedFnSource)
+    parser = Parser()
+    with open(sourcePath) as source:
+        content = source.read()
+        frontPart, fnContent, endPart, startLineNo = parser.getFunctionContent(fnName, content)
+
+    repairedFnContent = repair(fnContent, bugLineNo, bugType)
+    print(repairedFnContent)
+    targetPath = sourcePath[:sourcePath.rindex('.')] + '-fix.cu'
+    with open(targetPath, 'w') as target:
+        target.write(frontPart + repairedFnContent + endPart)
