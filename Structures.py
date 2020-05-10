@@ -619,17 +619,81 @@ class TernaryOp(ASTNode):
 #     return None
 
 
+# can only find var defined in the func or parameter
+def findTypeOfVariable(vName, fnRoot):
+    for t, paraName in fnRoot.argList:
+        if paraName == vName:
+            return t
+    # use bfs traversal because ...
+    for stmt in bfsTraverseStmt(fnRoot):
+        if type(stmt) == Declaration and stmt.varName == vName:
+            return stmt.dateType
+    return None
+
+
+def repair(sourcePath, fnName, bugLineNo: list, bugType: int):
+    parser = Parser()
+    with open(sourcePath) as source:
+        content = source.read()
+        fnContent, startLineNo = parser.getFunctionContent(fnName, content)
+    func = FunctionDeclare(fnContent, startLineNo, None)
+    # bugStmt = [getStmtByLineNo(func, lineNo) for lineNo in bugLineNo]
+    ivCount = 0  # intermediate variable
+
+    # DR
+    if bugType == 0:
+        # DR in one line
+        if len(bugLineNo) == 1:
+            # must be assignment
+            bugStmt = getStmtByLineNo(func, bugLineNo[0])
+            if type(bugStmt) == Assignment:
+                originalContent = bugStmt.output()
+                ivType = None
+                ivName = '__tmp%d_' % ivCount  # intermediate variable
+                ivCount += 1
+                rightExp = bugStmt.rightSide
+                expType = type(rightExp.childNode)
+                # todo other type? or high dimensional array?
+                if expType == Array:
+                    arrType = findTypeOfVariable(rightExp.childNode.arr, func).strip()
+                    if arrType[-1] == '*':
+                        ivType = arrType[:-1]
+
+                # newAssignment1 = Assignment(ivType+" "+ivName+" "+originalContent[originalContent.find('='):] + ';',
+                #                             None, -1, bugStmt.parent)
+                newAssignment1 = parseStatement(ivType+" "+ivName+" "+originalContent[originalContent.find('='):] + ';',
+                                                -100, bugStmt.parent)
+                # newAssignment1.parse()
+                # newAssignment2 = Assignment(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
+                #                             None, -1, bugStmt.parent, barrierFn)
+                newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
+                                                -100, bugStmt.parent)
+                barrierFn = parseStatement('__syncthreads();', -100, bugStmt.parent)
+                barrierFn.previous = newAssignment1
+                newAssignment2.previous = barrierFn
+                newAssignment1.next = barrierFn
+                barrierFn.next = newAssignment2
+                if bugStmt.previous is not None:
+                    bugStmt.previous.next = newAssignment1
+                if bugStmt.next is not None:
+                    bugStmt.next.previous = newAssignment2
+
+                targetStmtList = bugStmt.parent.children
+                targetPosition = targetStmtList.index(bugStmt)
+                targetStmtList.remove(bugStmt)
+                targetStmtList.insert(targetPosition, newAssignment2)
+                targetStmtList.insert(targetPosition, barrierFn)
+                targetStmtList.insert(targetPosition, newAssignment1)
+    return func.output()
+
+
 if __name__ == "__main__":
     ParserElement.enablePackrat()
     # fnName = "_sum_reduce"  # OK
     # fnName = "_copy_low_upp"  # roughly OK, "return;" as expression
     fnName = "_copy_low_upp"
     sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    bugLine = 80
+    bugLineNo = [80]  # may happen in two line [79, 80]
     bugType = 0  # 0:DR 1:BD 2:RB
-    parser = Parser()
-    with open(sourcePath) as source:
-        content = source.read()
-        fnContent, startLineNo = parser.getFunctionContent(fnName, content)
-    func = FunctionDeclare(fnContent, startLineNo, None)
-    print(func.output())
+    repairedFnSource = repair(sourcePath, fnName, bugLineNo, bugType)
+    print(repairedFnSource)

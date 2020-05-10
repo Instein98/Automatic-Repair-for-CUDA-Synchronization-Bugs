@@ -110,3 +110,50 @@ def getLineNoByPos(content, position):
             return lineNo
     return None
 
+
+def getStmtByLineNo(node, lineNo):
+    if node.baseLineNo == lineNo:
+        return node
+    if node.children is not None and len(node.children) != 0:  # mode.children must be list
+        for child in node.children:
+            if type(child) != list:
+                res = getStmtByLineNo(child, lineNo)
+                if res is not None:
+                    return res
+            else:
+                for subchild in child:
+                    res = getStmtByLineNo(subchild, lineNo)
+                    if res is not None:
+                        return res
+    return None
+
+
+# pre-order traversal
+def preOrderTraverseStmt(node):
+    yield node
+    if node.children is not None and len(node.children) != 0:  # mode.children must be list
+        for child in node.children:
+            if type(child) != list:
+                for res in preOrderTraverseStmt(child):
+                    yield res
+            else:
+                for subchild in child:
+                    for res in preOrderTraverseStmt(subchild):
+                        yield res
+
+
+# bfs traversal
+def bfsTraverseStmt(node):
+    queue = []
+    queue.append(node)
+    while len(queue) > 0:
+        currentNode = queue[0]
+        yield currentNode
+        queue.pop(0)
+        # print(queue)
+        if currentNode.children is not None and len(currentNode.children) != 0:  # mode.children must be list
+            for child in currentNode.children:
+                if type(child) != list:
+                    queue.append(child)
+                else:
+                    queue.extend(child)
