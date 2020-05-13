@@ -450,6 +450,10 @@ class Expression(ASTNode):
         self.childNode = None
         self.parseExpression()
 
+    # todo
+    def getRelatedVariable(self):
+        pass
+
     def output(self, indentLevel=0):
         indent = indentLevel * '\t'
         if type(self.childNode) == str:
@@ -635,20 +639,184 @@ def findTypeOfVariable(vName, fnRoot):
     return None
 
 
+def variableIsRelatedToTID(vName, fnRoot, appearStmt):
+    relatedVariable = ['threadIdx', 'blockIdx']
+    for stmt in bfsTraverseStmt(fnRoot):
+        if type(stmt) == Assignment:
+            rightContent = stmt.rightSide.output()
+            for v in relatedVariable:
+                # todo not solid
+                if v in rightContent:
+                    leftNode = stmt.leftSide.childNode
+                    # todo not solid
+                    relatedVariable.append(leftNode if type(leftNode) == str else leftNode.arr)
+                    break
+        if stmt == appearStmt:
+            if vName in relatedVariable:
+                return True
+    return False
+
+
+# todo not enough!!
+def isMainPath(fnRoot, stmt):
+    parentPointer = stmt
+    while parentPointer.parent != fnRoot:
+        parentPointer = parentPointer.parent
+        if type(parentPointer) == If:
+            return False
+        elif type(parentPointer) == For:
+            return False
+        elif type(parentPointer) == While:
+            return False
+        elif type(parentPointer) == DoWhile:
+            return False
+    return True
+
+
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError or TypeError:
+        pass
+    return False
+
+
+# todo miss functionCall
+# should not pass expNode, but expNode.childNode!!!
+def getExpVariable(opNode, resList):
+    if type(opNode) == BinOp:
+        leftSide = opNode.left
+        rightSide = opNode.right
+        if type(leftSide) == str and not is_number(leftSide):
+            resList.append(leftSide)
+        elif type(leftSide) != str:
+            resList = getExpVariable(leftSide, resList)
+        if type(rightSide) == str and not is_number(rightSide):
+            resList.append(rightSide)
+        elif type(rightSide) != str:
+            resList = getExpVariable(rightSide, resList)
+    elif type(opNode) == Array:
+        resList.append(opNode.arr)
+        idx = opNode.index
+        if type(idx) == str and not is_number(idx):
+            resList.append(idx)
+        elif type(idx) != str:
+            resList = getExpVariable(idx, resList)
+    elif type(opNode) == UnaryOp:
+        operand = opNode.operand
+        if type(operand) == str and not is_number(operand):
+            resList.append(operand)
+        elif type(operand) != str:
+            resList = getExpVariable(operand, resList)
+    return resList
+
+
+def replaceStmt(originStmt, newStmts):
+    targetStmtList = originStmt.parent.children
+    if type(targetStmtList[0]) == list:  # parent is IF
+        if originStmt in targetStmtList[0]:
+            targetStmtList = targetStmtList[0]
+        elif originStmt in targetStmtList[1]:
+            targetStmtList = targetStmtList[1]
+        else:
+            print("can't find the originStmt!!!")
+            return None
+    idx = targetStmtList.index(originStmt)
+    if originStmt.previous is not None:
+        originStmt.previous.next = newStmts[0]
+        newStmts[0].previous = originStmt.previous.next
+    if originStmt.next is not None:
+        originStmt.next.previous = newStmts[-1]
+        newStmts[-1].next = originStmt.next.previous
+    for i, stmt in enumerate(newStmts):
+        if i+1 < len(newStmts):
+            newStmts[i].next = newStmts[i+1]
+            newStmts[i + 1].previous = newStmts[i]
+    targetStmtList.remove(originStmt)
+    for stmt in reversed(newStmts):
+        targetStmtList.insert(idx,stmt)
+
+
+def insertAfterStmt(originStmt, newStmts):
+    targetStmtList = originStmt.parent.children
+    if type(targetStmtList[0]) == list:  # parent is IF
+        if originStmt in targetStmtList[0]:
+            targetStmtList = targetStmtList[0]
+        elif originStmt in targetStmtList[1]:
+            targetStmtList = targetStmtList[1]
+        else:
+            print("can't find the originStmt!!!")
+            return None
+    idx = targetStmtList.index(originStmt)
+    originStmt.next = newStmts[0]
+    newStmts[0].previous = originStmt
+    if originStmt.next is not None:
+        originStmt.next.previous = newStmts[-1]
+        newStmts[-1].next = originStmt.next.previous
+    for i, stmt in enumerate(newStmts):
+        if i+1 < len(newStmts):
+            newStmts[i].next = newStmts[i+1]
+            newStmts[i + 1].previous = newStmts[i]
+    for stmt in newStmts:
+        targetStmtList.insert(idx+1, stmt)
+
+
+def transToIf(originalStmt, conditionContent):
+    wrappedStmt = None
+    newIfContent = "if (%s){" % conditionContent + originalStmt.output() + "}"
+    newIfObj = parseStatement(newIfContent, -1, originalStmt.parent)
+    wrappedStmt = newIfObj.children[0][0]
+    return newIfObj, wrappedStmt
+
+
 def repair(fnContent, bugLineNo: list, bugType: int):
     func = FunctionDeclare(fnContent, startLineNo, None)
     ivCount = 0  # intermediate variable
+    bugStmt = []
+    # avoid return/break in advance
+    returnFlag = False
+    exitEarlyVariable = None
+    for stmt in [x for x in preOrderTraverseStmt(func)]:
+        if not returnFlag:
+            if stmt.baseLineNo > max(bugLineNo):
+                break
+            if stmt.baseLineNo in bugLineNo:
+                bugStmt.append(stmt)
+            # todo: not solid
+            if type(stmt) == Return and "return" in stmt.content:
+                exitEarlyVariable = '__tmp%d_' % ivCount  # intermediate variable
+                ivCount += 1
+                initStmt = parseStatement("bool %s = false;" % exitEarlyVariable, -1, func)
+                func.children[0].previous = initStmt
+                initStmt.next = func.children[0]
+                func.children.insert(0, initStmt)
+                returnFlag = True
+                newStmt = parseStatement("%s = true;" % exitEarlyVariable, -1, stmt.parent)
+                replaceStmt(stmt, [newStmt])
+        else:
+            newIfStmt, wrappedStmt = transToIf(stmt, "! %s" % exitEarlyVariable)
+            replaceStmt(stmt, [newIfStmt])
+            if stmt.baseLineNo in bugLineNo:
+                bugStmt.append(wrappedStmt)
+            if stmt.baseLineNo == max(bugLineNo):
+                pointer = newIfStmt
+                while pointer.parent != func:
+                    pointer = pointer.parent
+                returnStmt = parseStatement("if(%s){ return; }"%exitEarlyVariable, -1, func)
+                insertAfterStmt(pointer, [returnStmt])
+                break
 
     # DR
     if bugType == 0:
         # DR in one line
         if len(bugLineNo) == 1:
             # must be assignment
-            bugStmt = getStmtByLineNo(func, bugLineNo[0])
+            bugStmt = bugStmt[0]
             if type(bugStmt) == Assignment:
                 originalContent = bugStmt.output()
                 ivType = None
-                ivName = '__tmp%d_' % ivCount  # intermediate variable
+                exitEarlyVariable = '__tmp%d_' % ivCount  # intermediate variable
                 ivCount += 1
                 rightExp = bugStmt.rightSide
                 expType = type(rightExp.childNode)
@@ -658,9 +826,9 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                     if arrType[-1] == '*':
                         ivType = arrType[:-1]
 
-                newAssignment1 = parseStatement(ivType+" "+ivName+" "+originalContent[originalContent.find('='):] + ';',
+                newAssignment1 = parseStatement(ivType+" "+exitEarlyVariable+" "+originalContent[originalContent.find('='):] + ';',
                                                 -100, bugStmt.parent)
-                newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
+                newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+exitEarlyVariable+';',
                                                 -100, bugStmt.parent)
                 barrierFn = parseStatement('__syncthreads();', -100, bugStmt.parent)
                 barrierFn.previous = newAssignment1
@@ -680,17 +848,31 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                 targetStmtList.insert(targetPosition, newAssignment2)
                 targetStmtList.insert(targetPosition, barrierFn)
                 targetStmtList.insert(targetPosition, newAssignment1)
+        elif len(bugLineNo) == 2:
+            bugStmt1 = getStmtByLineNo(func, bugLineNo[0])
+            bugStmt2 = getStmtByLineNo(func, bugLineNo[1])
+            isMain1 = isMainPath(func, bugStmt1)
+            isMain2 = isMainPath(func, bugStmt2)
+            if not isMain1 and not isMain2:
+                if type(bugStmt1.parent) == If:
+                    originalIfStmt = bugStmt1.parent
+                    if bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[0]:
+                        pass
+                    elif bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[1]:
+                        pass
+                    elif bugStmt1 in originalIfStmt.children[1] and bugStmt2 in originalIfStmt.children[1]:
+                        pass
     return func.output()
 
 
 if __name__ == "__main__":
     ParserElement.enablePackrat()
     # fnName = "_copy_low_upp"
-    fnName = "moveArrayForwardDevice"
+    fnName = "test"
     # sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/DR-test.cu"
-    # bugLineNo = [80]  # may happen in two line [79, 80]
-    bugLineNo = [3]
+    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/tests/DR-1-exitEarlyInMain.cu"
+    bugLineNo = [6, 7]  # may happen in two line [79, 80]
+    # bugLineNo = [4, 5]
     bugType = 0  # 0:DR 1:BD 2:RB
     parser = Parser()
     with open(sourcePath) as source:

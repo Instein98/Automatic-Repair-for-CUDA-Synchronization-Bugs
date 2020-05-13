@@ -144,8 +144,7 @@ def preOrderTraverseStmt(node):
 
 # bfs traversal
 def bfsTraverseStmt(node):
-    queue = []
-    queue.append(node)
+    queue = [node]
     while len(queue) > 0:
         currentNode = queue[0]
         yield currentNode

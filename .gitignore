@@ -108,7 +108,11 @@ venv.bak/
 
 #PyCharm
 .idea
-/test/
+#/test/
+/tests/test
+/tests/DR-test.cu
+/tests/DR-test-fix.cu
+/*.cu
 /test.py
 /ArithmeticParse.py
 *.g4
