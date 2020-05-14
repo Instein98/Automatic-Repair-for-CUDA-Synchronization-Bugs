@@ -113,6 +113,7 @@ venv.bak/
 /tests/DR-test.cu
 /tests/DR-test-fix.cu
 /*.cu
+*-fix.cu
 /test.py
 /ArithmeticParse.py
 *.g4

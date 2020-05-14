@@ -270,7 +270,7 @@ class If(Statement):
 
         previousStmt = None
         for x in statement.scanString(ifContent):
-            relativeLineNo = getLineNoByPos(self.content, x[1])
+            relativeLineNo = getLineNoByPos(ifContent, x[1])
             state = parseStatement(ifContent[x[1]:x[2]], ifContentBaseLineNo + relativeLineNo, self)
             if state is not None:
                 state.previous = previousStmt
@@ -280,8 +280,8 @@ class If(Statement):
                 previousStmt = state
         previousStmt = None
         for x in statement.scanString(elseContent):
-            relativeLineNo = getLineNoByPos(self.content, x[1])
-            state = parseStatement(elseContent[x[1]:x[2]], elseContentBaseLineNo + relativeLineNo)
+            relativeLineNo = getLineNoByPos(elseContent, x[1])
+            state = parseStatement(elseContent[x[1]:x[2]], elseContentBaseLineNo + relativeLineNo, self)
             if state is not None:
                 if previousStmt is not None:
                     previousStmt.next = state
@@ -303,6 +303,13 @@ class If(Statement):
             #     res += statement.output(indentLevel+1)
             res += indent + '}\n'
         return res
+
+    def copy(self):
+        newStmt = parseStatement(self.content, -1, self.parent)
+        newStmt.ifStatementList = self.ifStatementList
+        newStmt.elseStatementList = self.elseStatementList
+        newStmt.children = self.children
+        return newStmt
 
 
 # todo for(:) ?
@@ -361,7 +368,13 @@ class For(Statement):
                 output = self.postStatement.output(0)
                 res += output[:output.find(';')]  # remove ; and \n
             elif type(self.postStatement) == Expression:
-                res += self.postStatement.output(0)[1:-1]
+                output = self.postStatement.output(0)
+                LParenPos = output.find('(')
+                RParenPos = output.find(')')
+                if LParenPos == -1:
+                    res += self.postStatement.output(0)
+                else:
+                    res += self.postStatement.output(0)[LParenPos+1:RParenPos]
         res += '){\n'
         res += getStatementListOutput(self.statementList, indentLevel)
         # for statement in self.statementList:
@@ -579,7 +592,8 @@ class UnaryOp(ASTNode):
         for i, operator in enumerate(unaryOperator):
             if self.operator == operator:
                 if 'pre' in operator:
-                    return indent + unaryLiteral[i] + self.operand
+                    return indent + unaryLiteral[i] + \
+                           (self.operand if type(self.operand) == str else self.operand.output())
                 elif 'post' in operator:
                     return indent + self.operand + unaryLiteral[i]
 
@@ -714,7 +728,7 @@ def getExpVariable(opNode, resList):
 
 def replaceStmt(originStmt, newStmts):
     targetStmtList = originStmt.parent.children
-    if type(targetStmtList[0]) == list:  # parent is IF
+    if type(originStmt.parent) == If:  # parent is IF
         if originStmt in targetStmtList[0]:
             targetStmtList = targetStmtList[0]
         elif originStmt in targetStmtList[1]:
@@ -724,18 +738,21 @@ def replaceStmt(originStmt, newStmts):
             return None
     idx = targetStmtList.index(originStmt)
     if originStmt.previous is not None:
+        newStmts[0].previous = originStmt.previous
         originStmt.previous.next = newStmts[0]
-        newStmts[0].previous = originStmt.previous.next
     if originStmt.next is not None:
+        newStmts[-1].next = originStmt.next
         originStmt.next.previous = newStmts[-1]
-        newStmts[-1].next = originStmt.next.previous
     for i, stmt in enumerate(newStmts):
         if i+1 < len(newStmts):
             newStmts[i].next = newStmts[i+1]
             newStmts[i + 1].previous = newStmts[i]
     targetStmtList.remove(originStmt)
     for stmt in reversed(newStmts):
-        targetStmtList.insert(idx,stmt)
+        targetStmtList.insert(idx, stmt)
+    # if type(originStmt.parent) == If:
+    #     originStmt.parent.ifStatementList = originStmt.parent.children[0]
+    #     originStmt.parent.elseStatementList = originStmt.parent.children[1]
 
 
 def insertAfterStmt(originStmt, newStmts):
@@ -762,12 +779,79 @@ def insertAfterStmt(originStmt, newStmts):
         targetStmtList.insert(idx+1, stmt)
 
 
-def transToIf(originalStmt, conditionContent):
-    wrappedStmt = None
+def wrappedByIf(originalStmt, conditionContent):
     newIfContent = "if (%s){" % conditionContent + originalStmt.output() + "}"
     newIfObj = parseStatement(newIfContent, -1, originalStmt.parent)
     wrappedStmt = newIfObj.children[0][0]
     return newIfObj, wrappedStmt
+
+
+# child1 and child2 must be in order
+# note that the content and initExp of If will not change!!!
+def splitIf(ifStmt, child1, child2):
+    if child1.next != child2 and not (child1 in ifStmt.ifStatementList and child2 in ifStmt.elseStatementList):
+        child2 = child1.next
+    position1 = None
+    position2 = None
+    if child1 in ifStmt.ifStatementList and child2 in ifStmt.ifStatementList:
+        ifStmt2 = ifStmt.copy()
+        ifStmt.elseStatementList = []
+        ifStmt.children[1] = []
+        for i, stmt in enumerate(ifStmt.ifStatementList):
+            if stmt == child1:
+                position1 = i
+            elif stmt == child2:
+                position2 = i
+                break
+        ifStmt.ifStatementList = ifStmt.ifStatementList[:position1+1]
+        ifStmt.children[0] = ifStmt.ifStatementList
+        ifStmt2.ifStatementList = ifStmt2.ifStatementList[position2:]
+        ifStmt2.children[0] = ifStmt2.ifStatementList
+        return ifStmt, ifStmt2
+    elif child1 in ifStmt.ifStatementList and child2 in ifStmt.elseStatementList:
+        idx1 = ifStmt.content.index('(')
+        idx2 = ifStmt.content.index(')')
+        part1 = ifStmt.content[:idx1+1]  # if (
+        part2 = ifStmt.content[idx1+1: idx2]  # condition
+        part3 = ifStmt.content[idx2:]  # )...
+        newContent = part1 + '!(' + part2 + ')' + part3
+        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)
+        ifStmt.elseStatementList = []
+        ifStmt.children[1] = ifStmt.elseStatementList
+        ifStmt2.ifStatementList = ifStmt2.elseStatementList
+        ifStmt2.elseStatementList = []
+        ifStmt2.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
+        return ifStmt, ifStmt2
+    elif child1 in ifStmt.elseStatementList and child2 in ifStmt.elseStatementList:
+        idx1 = ifStmt.content.index('(')
+        idx2 = ifStmt.content.index(')')
+        part1 = ifStmt.content[:idx1 + 1]  # if (
+        part2 = ifStmt.content[idx1 + 1: idx2]  # condition
+        part3 = ifStmt.content[idx2:]  # )...
+        newContent = part1 + '!(' + part2 + ')' + part3
+        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)
+        for i, stmt in enumerate(ifStmt.elseStatementList):
+            if stmt == child1:
+                position1 = i
+            elif stmt == child2:
+                position2 = i
+                break
+        ifStmt.elseStatementList = ifStmt.elseStatementList[:position1 + 1]
+        ifStmt.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
+        ifStmt2.elseStatementList = ifStmt2.elseStatementList[position2:]
+        ifStmt2.ifStatementList = ifStmt2.elseStatementList
+        ifStmt2.elseStatementList = []
+        ifStmt2.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
+        return ifStmt, ifStmt2
+
+
+def getDepth(root, stmt):
+    pointer = stmt
+    depth = 0
+    while pointer != root:
+        pointer = pointer.parent
+        depth += 1
+    return depth
 
 
 def repair(fnContent, bugLineNo: list, bugType: int):
@@ -777,6 +861,8 @@ def repair(fnContent, bugLineNo: list, bugType: int):
     # avoid return/break in advance
     returnFlag = False
     exitEarlyVariable = None
+    # for l in bugLineNo:
+    #     bugStmt.append(getStmtByLineNo(func, l))
     for stmt in [x for x in preOrderTraverseStmt(func)]:
         if not returnFlag:
             if stmt.baseLineNo > max(bugLineNo):
@@ -795,7 +881,7 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                 newStmt = parseStatement("%s = true;" % exitEarlyVariable, -1, stmt.parent)
                 replaceStmt(stmt, [newStmt])
         else:
-            newIfStmt, wrappedStmt = transToIf(stmt, "! %s" % exitEarlyVariable)
+            newIfStmt, wrappedStmt = wrappedByIf(stmt, "! %s" % exitEarlyVariable)
             replaceStmt(stmt, [newIfStmt])
             if stmt.baseLineNo in bugLineNo:
                 bugStmt.append(wrappedStmt)
@@ -816,7 +902,7 @@ def repair(fnContent, bugLineNo: list, bugType: int):
             if type(bugStmt) == Assignment:
                 originalContent = bugStmt.output()
                 ivType = None
-                exitEarlyVariable = '__tmp%d_' % ivCount  # intermediate variable
+                ivName = '__tmp%d_' % ivCount  # intermediate variable
                 ivCount += 1
                 rightExp = bugStmt.rightSide
                 expType = type(rightExp.childNode)
@@ -825,43 +911,81 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                     arrType = findTypeOfVariable(rightExp.childNode.arr, func).strip()
                     if arrType[-1] == '*':
                         ivType = arrType[:-1]
-
-                newAssignment1 = parseStatement(ivType+" "+exitEarlyVariable+" "+originalContent[originalContent.find('='):] + ';',
+                    else:
+                        ivType = arrType
+                declare = parseStatement(ivType+" "+ivName+";", -100, func)
+                declare.next = func.children[0]
+                func.children[0].previous = declare
+                func.children.insert(0, declare)
+                newAssignment1 = parseStatement(ivName+" "+originalContent[originalContent.find('='):] + ';',
                                                 -100, bugStmt.parent)
-                newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+exitEarlyVariable+';',
+                newAssignment2 = parseStatement(originalContent[:originalContent.find('=')+1]+" "+ivName+';',
                                                 -100, bugStmt.parent)
-                barrierFn = parseStatement('__syncthreads();', -100, bugStmt.parent)
-                barrierFn.previous = newAssignment1
-                newAssignment2.previous = barrierFn
-                newAssignment1.next = barrierFn
-                barrierFn.next = newAssignment2
-                if bugStmt.previous is not None:
-                    bugStmt.previous.next = newAssignment1
-                if bugStmt.next is not None:
-                    bugStmt.next.previous = newAssignment2
+                replaceStmt(bugStmt, [newAssignment1, newAssignment2])
+                bugStmt = [newAssignment1, newAssignment2]
 
-                targetStmtList = bugStmt.parent.children
-                if type(targetStmtList[0]) == list:  # if statement
-                    targetStmtList = targetStmtList[0] if bugStmt in targetStmtList[0] else targetStmtList[1]
-                targetPosition = targetStmtList.index(bugStmt)
-                targetStmtList.remove(bugStmt)
-                targetStmtList.insert(targetPosition, newAssignment2)
-                targetStmtList.insert(targetPosition, barrierFn)
-                targetStmtList.insert(targetPosition, newAssignment1)
-        elif len(bugLineNo) == 2:
-            bugStmt1 = getStmtByLineNo(func, bugLineNo[0])
-            bugStmt2 = getStmtByLineNo(func, bugLineNo[1])
-            isMain1 = isMainPath(func, bugStmt1)
-            isMain2 = isMainPath(func, bugStmt2)
-            if not isMain1 and not isMain2:
-                if type(bugStmt1.parent) == If:
-                    originalIfStmt = bugStmt1.parent
-                    if bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[0]:
-                        pass
-                    elif bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[1]:
-                        pass
-                    elif bugStmt1 in originalIfStmt.children[1] and bugStmt2 in originalIfStmt.children[1]:
-                        pass
+        if len(bugStmt) == 2:
+            if type(bugStmt[0]) == Declaration:
+                declare = parseStatement(bugStmt[0].content[:bugStmt[0].content.index("=")]+';', -100, func)
+                declare.next = func.children[0]
+                func.children[0].previous = declare
+                func.children.insert(0, declare)
+                newAssignment = parseStatement(bugStmt[0].content[bugStmt[0].content.index(" "):],
+                                               -100, bugStmt[0].parent)
+                replaceStmt(bugStmt[0], [newAssignment])
+                bugStmt[0] = newAssignment
+
+            # find common parent
+            depth1 = getDepth(func, bugStmt[0])
+            depth2 = getDepth(func, bugStmt[1])
+            while depth1 < depth2:
+                bugStmt[1] = bugStmt[1].parent
+                depth2 -= 1
+            while depth1 > depth2:
+                bugStmt[0] = bugStmt[0].parent
+                depth1 -= 1
+            while bugStmt[0].parent != bugStmt[1].parent:
+                bugStmt[0] = bugStmt[0].parent
+                bugStmt[1] = bugStmt[1].parent
+            # split the If
+            while type(bugStmt[0].parent) == If:
+                ifStmt1, ifStmt2 = splitIf(bugStmt[0].parent, bugStmt[0], bugStmt[1])
+                replaceStmt(bugStmt[0].parent, [ifStmt1, ifStmt2])
+                bugStmt = [ifStmt1, ifStmt2]
+
+            barrierFn = parseStatement('__syncthreads();', -100, bugStmt[0].parent)
+            insertAfterStmt(bugStmt[0], [barrierFn])
+
+
+
+            # if bugStmt.previous is not None:
+            #     bugStmt.previous.next = newAssignment1
+            # if bugStmt.next is not None:
+            #     bugStmt.next.previous = newAssignment2
+            #
+            # targetStmtList = bugStmt.parent.children
+            # if type(targetStmtList[0]) == list:  # if statement
+            #     targetStmtList = targetStmtList[0] if bugStmt in targetStmtList[0] else targetStmtList[1]
+            # targetPosition = targetStmtList.index(bugStmt)
+            # targetStmtList.remove(bugStmt)
+            # targetStmtList.insert(targetPosition, newAssignment2)
+            # targetStmtList.insert(targetPosition, barrierFn)
+            # targetStmtList.insert(targetPosition, newAssignment1)
+
+        # elif len(bugLineNo) == 2:
+        #     bugStmt1 = getStmtByLineNo(func, bugLineNo[0])
+        #     bugStmt2 = getStmtByLineNo(func, bugLineNo[1])
+        #     isMain1 = isMainPath(func, bugStmt1)
+        #     isMain2 = isMainPath(func, bugStmt2)
+        #     if not isMain1 and not isMain2:
+        #         if type(bugStmt1.parent) == If:
+        #             originalIfStmt = bugStmt1.parent
+        #             if bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[0]:
+        #                 pass
+        #             elif bugStmt1 in originalIfStmt.children[0] and bugStmt2 in originalIfStmt.children[1]:
+        #                 pass
+        #             elif bugStmt1 in originalIfStmt.children[1] and bugStmt2 in originalIfStmt.children[1]:
+        #                 pass
     return func.output()
 
 
@@ -870,8 +994,8 @@ if __name__ == "__main__":
     # fnName = "_copy_low_upp"
     fnName = "test"
     # sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/tests/DR-1-exitEarlyInMain.cu"
-    bugLineNo = [6, 7]  # may happen in two line [79, 80]
+    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/tests/DR-2-oneMainPath.cu"
+    bugLineNo = [3, 5]  # may happen in two line [79, 80]
     # bugLineNo = [4, 5]
     bugType = 0  # 0:DR 1:BD 2:RB
     parser = Parser()

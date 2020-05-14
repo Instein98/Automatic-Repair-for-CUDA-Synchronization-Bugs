@@ -8,11 +8,11 @@ __global__ void test(float *A){
     A[i] = A[i+1];
 }
 
-__global__ void test1(float *A){
-    int i = threadIdx.x;
-    if (i != 5){
-        A[i] = A[i+1];
-    }else{
-        return;
-    }
-}
+//__global__ void test1(float *A){
+//    int i = threadIdx.x;
+//    if (i != 5){
+//        A[i] = A[i+1];
+//    }else{
+//        return;
+//    }
+//}

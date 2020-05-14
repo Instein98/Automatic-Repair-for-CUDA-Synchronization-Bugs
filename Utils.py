@@ -104,10 +104,10 @@ def getFunction(content, fnName):
 def getLineNoByPos(content, position):
     lineNo = 0
     for i, a in enumerate(content):
-        if a == '\n':
-            lineNo += 1
         if i == position:
             return lineNo
+        if a == '\n':
+            lineNo += 1
     return None
 
 

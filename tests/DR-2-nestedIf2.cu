@@ -1,7 +1,7 @@
 __global__ void test(float *A, const int N){
     int i = threadIdx.x;
+    float x = 0;
     if (i < 8){
-        float x = 0;
         if (i < N){
             x = A[i+1];
         }
