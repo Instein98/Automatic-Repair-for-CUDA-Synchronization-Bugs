@@ -75,8 +75,10 @@ def getStatementListOutput(sList, currentIndentLevel):
     res = ''
     for statement in sList:
         if type(statement) == Expression:
-            expr = statement.output()[1:-1]  # removing ( and )
-            res += (currentIndentLevel + 1) * '\t' + expr + ';\n'
+            output = statement.output().strip()
+            if output[0] == '(' and output[-1] == ')':
+                output = statement.output()[1:-1]  # removing ( and )
+            res += (currentIndentLevel + 1) * '\t' + output + ';\n'
         else:
             res += statement.output(currentIndentLevel + 1)  # assume output of this include ; and \n
     return res
@@ -311,6 +313,20 @@ class If(Statement):
         newStmt.children = self.children
         return newStmt
 
+    def copyReverse(self):
+        idx1 = self.content.index('(')
+        idx2 = self.content.index(')')
+        part1 = self.content[:idx1 + 1]  # if (
+        conditionContent = self.content[idx1 + 1: idx2]  # condition
+        part2 = self.content[idx2:]  # )...
+
+        newStmt = parseStatement(part1 + '!('+conditionContent+')'+part2,
+                                 -1, self.parent)
+        newStmt.ifStatementList = self.ifStatementList
+        newStmt.elseStatementList = self.elseStatementList
+        newStmt.children = self.children
+        return newStmt
+
 
 # todo for(:) ?
 class For(Statement):
@@ -342,7 +358,7 @@ class For(Statement):
 
         previousStmt = None
         for x in statement.scanString(stateContent):
-            relativeLineNo = getLineNoByPos(self.content, x[1])
+            relativeLineNo = getLineNoByPos(stateContent, x[1])
             state = parseStatement(stateContent[x[1]:x[2]], self.baseLineNo + relativeLineNo, self)
             if state is not None:
                 state.previous = previousStmt
@@ -393,7 +409,7 @@ class While(Statement):
 
         previousStmt = None
         for x in statement.scanString(stateContent):
-            relativeLineNo = getLineNoByPos(self.content, x[1])
+            relativeLineNo = getLineNoByPos(stateContent, x[1])
             state = parseStatement(stateContent[x[1]:x[2]], self.baseLineNo + relativeLineNo, self)
             if state is not None:
                 state.previous = previousStmt
@@ -815,7 +831,7 @@ def splitIf(ifStmt, child1, child2):
         part2 = ifStmt.content[idx1+1: idx2]  # condition
         part3 = ifStmt.content[idx2:]  # )...
         newContent = part1 + '!(' + part2 + ')' + part3
-        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)
+        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)  # ifStmt2.content is wrong!!!
         ifStmt.elseStatementList = []
         ifStmt.children[1] = ifStmt.elseStatementList
         ifStmt2.ifStatementList = ifStmt2.elseStatementList
@@ -854,15 +870,64 @@ def getDepth(root, stmt):
     return depth
 
 
+def moveBranchInsideLoop(ifStmt, loopStack):
+    targetIf = None
+    for loopStmt in loopStack:  # loopStmt.parent must be ifStmt!!!
+        # split the ifStmt into several ifStmt
+        if loopStmt in ifStmt.ifStatementList:
+            loopIdx = ifStmt.ifStatementList.index(loopStmt)
+            replaceList = []
+            if loopIdx != 0:
+                newIf1 = ifStmt.copy()  # previous part
+                newIf1.elseStatementList = []
+                newIf1.ifStatementList = newIf1.ifStatementList[:loopIdx]
+                replaceList.append(newIf1)
+            targetIf = ifStmt.copy()
+            targetIf.elseStatementList = []
+            targetIf.ifStatementList = [loopStmt]
+            replaceList.append(targetIf)
+            if loopIdx < len(ifStmt.ifStatementList)-1:
+                newIf2 = ifStmt.copy()
+                newIf2.ifStatementList = newIf2.ifStatementList[loopIdx+1:]
+                replaceList.append(newIf2)
+            elif loopIdx == len(ifStmt.ifStatementList)-1:
+                newIf2 = ifStmt.copyReverse()
+                newIf2.ifStatementList = newIf2.elseStatementList
+                newIf2.elseStatementList = []
+                replaceList.append(newIf2)
+            replaceStmt(ifStmt, replaceList)
+        elif loopStmt in ifStmt.elseStatementList:
+            loopIdx = ifStmt.elseStatemen0596tList.index(loopStmt)
+            replaceList = []
+
+            newIf1 = ifStmt.copy()  # previous part
+            newIf1.elseStatementList = newIf1.elseStatementList[:loopIdx]
+            replaceList.append(newIf1)
+            targetIf = ifStmt.copyReverse()
+            targetIf.ifStatementList = [loopStmt]
+            targetIf.elseStatementList = []
+            replaceList.append(targetIf)
+            if loopIdx != len(ifStmt.elseStatementList)-1:
+                newIf2 = ifStmt.copyReverse()
+                newIf2.ifStatementList = newIf2.elseStatementList[loopIdx+1:]
+                newIf2.elseStatementList = []
+                replaceList.append(newIf2)
+            replaceStmt(ifStmt, replaceList)
+
+        # put the if into the loop block
+
+
+
+
+
 def repair(fnContent, bugLineNo: list, bugType: int):
     func = FunctionDeclare(fnContent, startLineNo, None)
     ivCount = 0  # intermediate variable
     bugStmt = []
-    # avoid return/break in advance
+
+    # handle early return of the thread
     returnFlag = False
     exitEarlyVariable = None
-    # for l in bugLineNo:
-    #     bugStmt.append(getStmtByLineNo(func, l))
     for stmt in [x for x in preOrderTraverseStmt(func)]:
         if not returnFlag:
             if stmt.baseLineNo > max(bugLineNo):
@@ -893,9 +958,8 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                 insertAfterStmt(pointer, [returnStmt])
                 break
 
-    # DR
     if bugType == 0:
-        # DR in one line
+        # split one line DR into two line DR (only Assignment now)
         if len(bugLineNo) == 1:
             # must be assignment
             bugStmt = bugStmt[0]
@@ -924,7 +988,9 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                 replaceStmt(bugStmt, [newAssignment1, newAssignment2])
                 bugStmt = [newAssignment1, newAssignment2]
 
+        # handle two line DR
         if len(bugStmt) == 2:
+            # upgrade the local declaration to global declaration
             if type(bugStmt[0]) == Declaration:
                 declare = parseStatement(bugStmt[0].content[:bugStmt[0].content.index("=")]+';', -100, func)
                 declare.next = func.children[0]
@@ -947,7 +1013,19 @@ def repair(fnContent, bugLineNo: list, bugType: int):
             while bugStmt[0].parent != bugStmt[1].parent:
                 bugStmt[0] = bugStmt[0].parent
                 bugStmt[1] = bugStmt[1].parent
-            # split the If
+
+            # put the If into the while
+            loopStack = []
+            pointer = bugStmt[0].parent
+            while pointer != func:
+                if type(pointer) == For or type(pointer) == While or type(pointer) == DoWhile:
+                    loopStack.insert(0, pointer)
+                    pointer = pointer.parent
+                elif type(pointer) == If and len(loopStack) > 0:
+                    moveBranchInsideLoop(pointer, loopStack)
+
+
+            # split the branch, create main path
             while type(bugStmt[0].parent) == If:
                 ifStmt1, ifStmt2 = splitIf(bugStmt[0].parent, bugStmt[0], bugStmt[1])
                 replaceStmt(bugStmt[0].parent, [ifStmt1, ifStmt2])
@@ -994,8 +1072,8 @@ if __name__ == "__main__":
     # fnName = "_copy_low_upp"
     fnName = "test"
     # sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/tests/DR-2-oneMainPath.cu"
-    bugLineNo = [3, 5]  # may happen in two line [79, 80]
+    sourcePath = r"D:\DATA\Python_ws\CUDA_Parser\tests\DR-1-simpleWhile.cu"
+    bugLineNo = [5]  # may happen in two line [79, 80]
     # bugLineNo = [4, 5]
     bugType = 0  # 0:DR 1:BD 2:RB
     parser = Parser()

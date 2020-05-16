@@ -119,3 +119,4 @@ venv.bak/
 *.g4
 *.txt
 /test.cpp
+/test/
