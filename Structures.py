@@ -295,7 +295,10 @@ class If(Statement):
         indent = indentLevel*'\t'
         res = indent + 'if (' + self.condition.output() + '){\n'
         for statement in self.ifStatementList:
-            res += statement.output(indentLevel+1)
+            if type(statement) == Expression:
+                res += statement.output(indentLevel + 1) + ';\n'
+            else:
+                res += statement.output(indentLevel + 1)
         if len(self.elseStatementList) == 0:
             res += indent + '}\n'
         else:
@@ -308,9 +311,9 @@ class If(Statement):
 
     def copy(self):
         newStmt = parseStatement(self.content, -1, self.parent)
-        newStmt.ifStatementList = self.ifStatementList
-        newStmt.elseStatementList = self.elseStatementList
-        newStmt.children = self.children
+        newStmt.ifStatementList = self.ifStatementList.copy()
+        newStmt.elseStatementList = self.elseStatementList.copy()
+        newStmt.children = [newStmt.ifStatementList, newStmt.elseStatementList]
         return newStmt
 
     def copyReverse(self):
@@ -322,9 +325,9 @@ class If(Statement):
 
         newStmt = parseStatement(part1 + '!('+conditionContent+')'+part2,
                                  -1, self.parent)
-        newStmt.ifStatementList = self.ifStatementList
-        newStmt.elseStatementList = self.elseStatementList
-        newStmt.children = self.children
+        newStmt.ifStatementList = self.ifStatementList.copy()
+        newStmt.elseStatementList = self.elseStatementList.copy()
+        newStmt.children = [newStmt.ifStatementList, newStmt.elseStatementList]
         return newStmt
 
 
@@ -745,10 +748,10 @@ def getExpVariable(opNode, resList):
 def replaceStmt(originStmt, newStmts):
     targetStmtList = originStmt.parent.children
     if type(originStmt.parent) == If:  # parent is IF
-        if originStmt in targetStmtList[0]:
-            targetStmtList = targetStmtList[0]
-        elif originStmt in targetStmtList[1]:
-            targetStmtList = targetStmtList[1]
+        if originStmt in originStmt.parent.ifStatementList:
+            targetStmtList = originStmt.parent.ifStatementList
+        elif originStmt in originStmt.parent.elseStatementList:
+            targetStmtList = originStmt.parent.elseStatementList
         else:
             print("can't find the originStmt!!!")
             return None
@@ -810,55 +813,45 @@ def splitIf(ifStmt, child1, child2):
     position1 = None
     position2 = None
     if child1 in ifStmt.ifStatementList and child2 in ifStmt.ifStatementList:
+        ifStmt1 = ifStmt.copy()
         ifStmt2 = ifStmt.copy()
-        ifStmt.elseStatementList = []
-        ifStmt.children[1] = []
+        ifStmt1.elseStatementList.clear()
         for i, stmt in enumerate(ifStmt.ifStatementList):
             if stmt == child1:
                 position1 = i
             elif stmt == child2:
                 position2 = i
                 break
-        ifStmt.ifStatementList = ifStmt.ifStatementList[:position1+1]
-        ifStmt.children[0] = ifStmt.ifStatementList
+        ifStmt1.ifStatementList = ifStmt1.ifStatementList[:position1+1]
+        ifStmt1.children[0] = ifStmt1.ifStatementList
         ifStmt2.ifStatementList = ifStmt2.ifStatementList[position2:]
         ifStmt2.children[0] = ifStmt2.ifStatementList
-        return ifStmt, ifStmt2
+        return ifStmt1, ifStmt2
     elif child1 in ifStmt.ifStatementList and child2 in ifStmt.elseStatementList:
-        idx1 = ifStmt.content.index('(')
-        idx2 = ifStmt.content.index(')')
-        part1 = ifStmt.content[:idx1+1]  # if (
-        part2 = ifStmt.content[idx1+1: idx2]  # condition
-        part3 = ifStmt.content[idx2:]  # )...
-        newContent = part1 + '!(' + part2 + ')' + part3
-        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)  # ifStmt2.content is wrong!!!
-        ifStmt.elseStatementList = []
-        ifStmt.children[1] = ifStmt.elseStatementList
+        ifStmt2 = ifStmt.copyReverse()  # ifStmt2.content is wrong!!!
+        ifStmt1 = ifStmt.copy()  # ifStmt1.content is wrong!!!
+        ifStmt1.elseStatementList.clear()
+        ifStmt1.children[1] = ifStmt1.elseStatementList
         ifStmt2.ifStatementList = ifStmt2.elseStatementList
         ifStmt2.elseStatementList = []
         ifStmt2.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
-        return ifStmt, ifStmt2
+        return ifStmt1, ifStmt2
     elif child1 in ifStmt.elseStatementList and child2 in ifStmt.elseStatementList:
-        idx1 = ifStmt.content.index('(')
-        idx2 = ifStmt.content.index(')')
-        part1 = ifStmt.content[:idx1 + 1]  # if (
-        part2 = ifStmt.content[idx1 + 1: idx2]  # condition
-        part3 = ifStmt.content[idx2:]  # )...
-        newContent = part1 + '!(' + part2 + ')' + part3
-        ifStmt2 = parseStatement(newContent, -1, ifStmt.parent)
+        ifStmt1 = ifStmt.copy()
+        ifStmt2 = ifStmt.copyReverse()
         for i, stmt in enumerate(ifStmt.elseStatementList):
             if stmt == child1:
                 position1 = i
             elif stmt == child2:
                 position2 = i
                 break
-        ifStmt.elseStatementList = ifStmt.elseStatementList[:position1 + 1]
-        ifStmt.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
+        ifStmt1.elseStatementList = ifStmt1.elseStatementList[:position1 + 1]
+        ifStmt1.children = [ifStmt1.ifStatementList, ifStmt1.elseStatementList]
         ifStmt2.elseStatementList = ifStmt2.elseStatementList[position2:]
         ifStmt2.ifStatementList = ifStmt2.elseStatementList
-        ifStmt2.elseStatementList = []
+        ifStmt2.elseStatementList.clear()
         ifStmt2.children = [ifStmt2.ifStatementList, ifStmt2.elseStatementList]
-        return ifStmt, ifStmt2
+        return ifStmt1, ifStmt2
 
 
 def getDepth(root, stmt):
@@ -879,44 +872,64 @@ def moveBranchInsideLoop(ifStmt, loopStack):
             replaceList = []
             if loopIdx != 0:
                 newIf1 = ifStmt.copy()  # previous part
-                newIf1.elseStatementList = []
+                newIf1.elseStatementList.clear()
                 newIf1.ifStatementList = newIf1.ifStatementList[:loopIdx]
                 replaceList.append(newIf1)
             targetIf = ifStmt.copy()
-            targetIf.elseStatementList = []
-            targetIf.ifStatementList = [loopStmt]
+            targetIf.elseStatementList.clear()
+            targetIf.ifStatementList.clear()
+            targetIf.ifStatementList.append(loopStmt)
             replaceList.append(targetIf)
             if loopIdx < len(ifStmt.ifStatementList)-1:
                 newIf2 = ifStmt.copy()
                 newIf2.ifStatementList = newIf2.ifStatementList[loopIdx+1:]
                 replaceList.append(newIf2)
-            elif loopIdx == len(ifStmt.ifStatementList)-1:
+            elif loopIdx == len(ifStmt.ifStatementList)-1 and len(ifStmt.elseStatementList) != 0:
                 newIf2 = ifStmt.copyReverse()
                 newIf2.ifStatementList = newIf2.elseStatementList
-                newIf2.elseStatementList = []
+                newIf2.elseStatementList.clear()
                 replaceList.append(newIf2)
             replaceStmt(ifStmt, replaceList)
         elif loopStmt in ifStmt.elseStatementList:
-            loopIdx = ifStmt.elseStatemen0596tList.index(loopStmt)
+            loopIdx = ifStmt.elseStatementList.index(loopStmt)
             replaceList = []
 
             newIf1 = ifStmt.copy()  # previous part
             newIf1.elseStatementList = newIf1.elseStatementList[:loopIdx]
             replaceList.append(newIf1)
             targetIf = ifStmt.copyReverse()
-            targetIf.ifStatementList = [loopStmt]
-            targetIf.elseStatementList = []
+            targetIf.ifStatementList.clear()
+            targetIf.ifStatementList.append(loopStmt)
+            targetIf.elseStatementList.clear()
             replaceList.append(targetIf)
             if loopIdx != len(ifStmt.elseStatementList)-1:
                 newIf2 = ifStmt.copyReverse()
                 newIf2.ifStatementList = newIf2.elseStatementList[loopIdx+1:]
-                newIf2.elseStatementList = []
+                newIf2.elseStatementList.clear()
                 replaceList.append(newIf2)
             replaceStmt(ifStmt, replaceList)
 
         # put the if into the loop block
-
-
+        targetStmtList = targetIf.parent.children
+        if type(targetIf.parent) == If:  # parent is IF
+            if targetIf in targetStmtList[0]:
+                targetStmtList = targetStmtList[0]
+            elif targetIf in targetStmtList[1]:
+                targetStmtList = targetStmtList[1]
+            else:
+                print("can't find the originStmt!!!")
+                return None
+        targetIfIdx = targetStmtList.index(targetIf)
+        for stmt in loopStmt.statementList:
+            stmt.parent = targetIf
+        targetIf.ifStatementList = loopStmt.statementList.copy()
+        loopStmt.parent = targetIf.parent
+        loopStmt.statementList.clear()
+        loopStmt.statementList.append(targetIf)
+        targetIf.parent = loopStmt
+        targetStmtList.remove(targetIf)
+        targetStmtList.insert(targetIfIdx, loopStmt)
+        ifStmt = targetIf
 
 
 
@@ -1023,7 +1036,7 @@ def repair(fnContent, bugLineNo: list, bugType: int):
                     pointer = pointer.parent
                 elif type(pointer) == If and len(loopStack) > 0:
                     moveBranchInsideLoop(pointer, loopStack)
-
+                    pointer = loopStack[0].parent
 
             # split the branch, create main path
             while type(bugStmt[0].parent) == If:
@@ -1033,6 +1046,9 @@ def repair(fnContent, bugLineNo: list, bugType: int):
 
             barrierFn = parseStatement('__syncthreads();', -100, bugStmt[0].parent)
             insertAfterStmt(bugStmt[0], [barrierFn])
+            if len(loopStack) != 0:
+                barrierFn = parseStatement('__syncthreads();', -100, bugStmt[0].parent)
+                insertAfterStmt(bugStmt[1], [barrierFn])
 
 
 
@@ -1071,9 +1087,9 @@ if __name__ == "__main__":
     ParserElement.enablePackrat()
     # fnName = "_copy_low_upp"
     fnName = "test"
-    # sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/test.cpp"
-    sourcePath = r"D:\DATA\Python_ws\CUDA_Parser\tests\DR-1-simpleWhile.cu"
-    bugLineNo = [5]  # may happen in two line [79, 80]
+    sourcePath = "/home/instein/桌面/毕设/CUDA_Parser/tests/DR-2-nestedIf&Loop3.cu"
+    # sourcePath = r"D:\DATA\Python_ws\CUDA_Parser\tests\DR-2-nestedIf&Loop1.cu"
+    bugLineNo = [11, 12]  # may happen in two line [79, 80]
     # bugLineNo = [4, 5]
     bugType = 0  # 0:DR 1:BD 2:RB
     parser = Parser()
